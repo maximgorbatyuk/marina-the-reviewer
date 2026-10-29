@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a release and prepare its Homebrew tap pull request."""
+"""Verify a release and publish its validated Homebrew formula."""
 
 import argparse
 import base64
@@ -114,7 +114,7 @@ def check_changes(base_sha, head_sha, formula):
         raise ValueError("Prepared formula does not match the verified release")
 
 
-def prepare_update(version, formula):
+def prepare_update(version, formula, create_pr=True):
     base = api(f"repos/{TAP}")["default_branch"]
     base_sha = api(f"repos/{TAP}/git/ref/heads/{base}")["object"]["sha"]
     current, _ = formula_at(base_sha)
@@ -136,6 +136,10 @@ def prepare_update(version, formula):
         if blob:
             payload["sha"] = blob
         api(f"repos/{TAP}/contents/{FORMULA}", payload, method="PUT")
+    if not create_pr:
+        head = api(f"repos/{TAP}/git/ref/heads/{branch}")["object"]["sha"]
+        check_changes(base_sha, head, formula)
+        return {"changed": True, "branch": branch, "head_sha": head}
     prs = json.loads(gh("pr", "list", "--repo", TAP, "--head", branch, "--base", base, "--state", "open", "--json", "number,url"))
     if not prs:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md") as body:
@@ -148,7 +152,7 @@ def prepare_update(version, formula):
     return {"changed": True, "branch": branch, "head_sha": head, "pr_url": pr["html_url"]}
 
 
-def publish_update(version, formula, verified_head):
+def publish_update(version, formula, verified_head, use_pr=True):
     if not re.fullmatch(r"[0-9a-f]{40}", verified_head):
         raise ValueError("Invalid verified head SHA")
     base = api(f"repos/{TAP}")["default_branch"]
@@ -157,12 +161,19 @@ def publish_update(version, formula, verified_head):
     reason = skip_reason(current, version, formula)
     if reason:
         return {"published": False, "reason": reason}
-    pr = checked_pr(version, base)
-    if pr["head"]["sha"] != verified_head:
-        raise ValueError("Formula pull request head changed after validation")
+    if use_pr:
+        pr = checked_pr(version, base)
+        head = pr["head"]["sha"]
+    else:
+        head = api(f"repos/{TAP}/git/ref/heads/{branch_name(version)}")["object"]["sha"]
+    if head != verified_head:
+        raise ValueError("Formula head changed after validation")
     check_changes(base_sha, verified_head, formula)
     api(f"repos/{TAP}/git/refs/heads/{base}", {"sha": verified_head, "force": False}, method="PATCH")
-    return {"published": True, "head_sha": verified_head, "pr_url": pr["html_url"]}
+    result = {"published": True, "head_sha": verified_head}
+    if use_pr:
+        result["pr_url"] = pr["html_url"]
+    return result
 
 
 def write_outputs(values, path):
@@ -180,9 +191,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--publish", action="store_true", help="Prepare a formula pull request")
-    mode.add_argument("--merge", action="store_true", help="Publish the exact validated pull request head")
+    mode.add_argument("--publish", action="store_true", help="Prepare a formula branch and optional pull request")
+    mode.add_argument("--merge", action="store_true", help="Publish the exact validated formula head")
     parser.add_argument("--head-sha")
+    parser.add_argument("--no-pr", action="store_true", help="Use a verified branch without pull request API access")
     args = parser.parse_args()
     if bool(args.head_sha) != args.merge:
         parser.error("--merge requires --head-sha; other modes do not accept it")
@@ -202,7 +214,7 @@ def main():
     if not args.publish and not args.merge:
         print(formula, end="")
         return
-    result = publish_update(version, formula, args.head_sha) if args.merge else prepare_update(version, formula)
+    result = publish_update(version, formula, args.head_sha, use_pr=not args.no_pr) if args.merge else prepare_update(version, formula, create_pr=not args.no_pr)
     if os.environ.get("GITHUB_OUTPUT"):
         write_outputs(result, os.environ["GITHUB_OUTPUT"])
     print(json.dumps(result))

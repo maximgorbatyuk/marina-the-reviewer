@@ -37,7 +37,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - name: Prepare verified formula pull request
+      - name: Prepare verified formula branch
         id: prepare
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -46,7 +46,7 @@ jobs:
             echo '::error::HOMEBREW_TAP_TOKEN is required to publish the Homebrew formula.'
             exit 1
           fi
-          python3 scripts/update_homebrew.py --tag "$RELEASE_TAG" --publish
+          python3 scripts/update_homebrew.py --tag "$RELEASE_TAG" --publish --no-pr
   validate:
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
@@ -86,4 +86,4 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
           VERIFIED_HEAD: ${{ needs.prepare.outputs.head_sha }}
-        run: python3 scripts/update_homebrew.py --tag "$RELEASE_TAG" --merge --head-sha "$VERIFIED_HEAD"
+        run: python3 scripts/update_homebrew.py --tag "$RELEASE_TAG" --merge --head-sha "$VERIFIED_HEAD" --no-pr

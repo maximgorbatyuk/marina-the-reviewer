@@ -37,6 +37,8 @@ class TapAPI:
             return {"default_branch": "main"}
         if path == prefix + "/git/ref/heads/main":
             return {"object": {"sha": BASE}}
+        if path == prefix + "/git/ref/heads/" + BRANCH:
+            return {"object": {"sha": self.pr_head}}
         if "/git/matching-refs/" in path:
             return [{"ref": "refs/heads/" + BRANCH, "object": {"sha": HEAD}}] if self.branch_exists else []
         if path == prefix + "/git/refs":
@@ -164,3 +166,28 @@ class HomebrewUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Resource not accessible") as caught:
                 update.gh("pr", "create")
         self.assertNotIn("private-test-token", str(caught.exception))
+
+    def test_automation_prepares_without_pull_request_permissions(self):
+        service = TapAPI()
+        with patch.object(update, "api", side_effect=service.api), patch.object(update, "gh", side_effect=AssertionError("Pull request access is not allowed")):
+            result = update.prepare_update("0.1.0", service.desired, create_pr=False)
+        self.assertTrue(result["changed"])
+        self.assertEqual(result["head_sha"], HEAD)
+        self.assertNotIn("pr_url", result)
+
+    def test_automation_publishes_only_the_validated_branch_without_pr_access(self):
+        service = TapAPI()
+        service.branch_formula = service.desired
+        with patch.object(update, "api", side_effect=service.api), patch.object(update, "gh", side_effect=AssertionError("Pull request access is not allowed")):
+            result = update.publish_update("0.1.0", service.desired, HEAD, use_pr=False)
+        self.assertTrue(result["published"])
+        self.assertEqual(service.writes, [(f"repos/{update.TAP}/git/refs/heads/main", {"sha": HEAD, "force": False}, "PATCH")])
+
+    def test_automation_rejects_branch_head_changed_after_validation(self):
+        service = TapAPI()
+        service.branch_formula = service.desired
+        service.pr_head = "9" * 40
+        with patch.object(update, "api", side_effect=service.api), patch.object(update, "gh", side_effect=AssertionError("Pull request access is not allowed")):
+            with self.assertRaisesRegex(ValueError, "head"):
+                update.publish_update("0.1.0", service.desired, HEAD, use_pr=False)
+        self.assertEqual(service.writes, [])
