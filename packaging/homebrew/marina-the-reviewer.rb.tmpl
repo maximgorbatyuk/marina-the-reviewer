@@ -15,7 +15,9 @@ class MarinaTheReviewer < Formula
   end
 
   test do
-    assert_match "marina-the-reviewer", shell_output("#{bin}/marinadoreview --version --json")
+    identity = JSON.parse(shell_output("#{bin}/marinadoreview --version --json"))
+    assert_equal "marina-the-reviewer", identity.fetch("tool")
+    assert_equal version.to_s, identity.fetch("version")
     assert_match "marina-the-reviewer", shell_output("#{bin}/marinadoreview capabilities --json")
     mkdir "repo" do
       system "git", "init", "--initial-branch=dev"

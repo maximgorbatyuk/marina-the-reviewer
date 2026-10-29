@@ -7,26 +7,83 @@ on:
         required: true
     secrets:
       HOMEBREW_TAP_TOKEN:
-        required: false
+        required: true
   workflow_dispatch:
     inputs:
       tag:
         type: string
         required: true
+  release:
+    types: [published]
 permissions:
   contents: read
+concurrency:
+  group: homebrew-marinadoreview
+  cancel-in-progress: false
 jobs:
-  update:
+  prepare:
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.prepare.outputs.changed }}
+      head_sha: ${{ steps.prepare.outputs.head_sha }}
+      source_sha: ${{ steps.source.outputs.commit }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      - name: Update tap pull request
+        id: source
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Prepare verified formula pull request
+        id: prepare
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo '::warning::Set HOMEBREW_TAP_TOKEN to enable automatic tap pull requests.'
-            exit 0
+            echo '::error::HOMEBREW_TAP_TOKEN is required to publish the Homebrew formula.'
+            exit 1
           fi
           python3 scripts/update_homebrew.py --tag "$RELEASE_TAG" --publish
+  validate:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install and validate the exact formula commit
+        env:
+          TAP_HEAD: ${{ needs.prepare.outputs.head_sha }}
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          brew tap maximgorbatyuk/tap
+          tap_root="$(brew --repository maximgorbatyuk/tap)"
+          git -C "$tap_root" fetch --depth=1 origin "$TAP_HEAD"
+          git -C "$tap_root" checkout --detach "$TAP_HEAD"
+          test "$(git -C "$tap_root" rev-parse HEAD)" = "$TAP_HEAD"
+          if brew command trust >/dev/null 2>&1; then
+            brew trust --formula maximgorbatyuk/tap/marina-the-reviewer
+          fi
+          brew install --build-from-source maximgorbatyuk/tap/marina-the-reviewer
+          brew test maximgorbatyuk/tap/marina-the-reviewer
+          brew style maximgorbatyuk/tap/marina-the-reviewer
+          brew audit --strict --online maximgorbatyuk/tap/marina-the-reviewer
+  publish:
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - name: Publish validated formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          VERIFIED_HEAD: ${{ needs.prepare.outputs.head_sha }}
+        run: python3 scripts/update_homebrew.py --tag "$RELEASE_TAG" --merge --head-sha "$VERIFIED_HEAD"

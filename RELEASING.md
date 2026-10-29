@@ -25,7 +25,13 @@ python3 scripts/update_homebrew.py --tag v0.1.0
 python3 scripts/update_homebrew.py --tag v0.1.0 --publish
 ```
 
-The first verifies the downloaded archive against `checksums.txt` and prints the formula. The second creates or updates a dedicated tap branch and PR, preserving unrelated files. Review and merge the PR, then verify:
+The first verifies the downloaded archive against `checksums.txt` and prints the formula. The second creates or updates a dedicated tap branch and PR, preserving unrelated files. It reports the exact head SHA that must be validated before publication. Repeating a published formula is a no-op; an older release cannot replace a newer version. To publish manually after package validation:
+
+```sh
+python3 scripts/update_homebrew.py --tag v0.1.0 --merge --head-sha VERIFIED_PR_HEAD
+```
+
+The publisher rejects a changed PR head, a changed tap base, unrelated files, or a formula that differs from the verified release. It fast-forwards the tap default branch without a force update or a new commit on that branch. GitHub marks the PR as merged. After publication, verify:
 
 ```sh
 brew update
@@ -34,4 +40,16 @@ brew test maximgorbatyuk/tap/marina-the-reviewer
 marinadoreview --version --json
 ```
 
-Automatic tap PRs require `HOMEBREW_TAP_TOKEN`, a fine-grained Actions secret with Contents write and Pull requests write access to the tap. Do not copy the local developer OAuth token into Actions. Without the secret, binary publication succeeds and the workflow reports the manual tap step. After configuring it, dispatch Homebrew for a published stable tag. Repeated runs reuse the same branch and open PR.
+## Automatic publication
+
+The `Homebrew` workflow runs after the tag release job succeeds. It also handles stable releases published outside that workflow and supports manual dispatch with a stable tag. The direct workflow call is required because a release created with `GITHUB_TOKEN` does not trigger another workflow through the release event.
+
+The workflow uses three separate jobs. Preparation verifies release checksums and creates a formula PR. Validation installs and tests its exact commit on macOS, then runs Homebrew style and strict online audit. Publication starts on a fresh runner with the same publisher source commit used in preparation and publishes only the validated formula SHA. Runs are serialized. A failed package check leaves the PR open and the published tap unchanged. Re-run the workflow after fixing a failure; a concurrent tap change requires fresh preparation and validation.
+
+Set `HOMEBREW_TAP_TOKEN` in the marina-the-reviewer repository Actions secrets. Use a fine-grained token limited to `maximgorbatyuk/homebrew-tap` with Contents read/write and Pull requests read/write. The token is passed only to preparation and publication; the package validation job receives no tap write token and does not share a runner with publication. Do not copy the local developer OAuth token into Actions. A missing, expired or insufficient token fails the workflow visibly. Renew the secret before its expiry.
+
+```sh
+gh workflow run homebrew.yml --repo maximgorbatyuk/marina-the-reviewer --ref dev -f tag=v0.1.0
+```
+
+Manual dispatch rechecks a previously published release without creating a new tag or running paid AI requests. An unchanged formula skips installation and publication. If the release version is older than the tap version, the workflow leaves the newer version in place.
