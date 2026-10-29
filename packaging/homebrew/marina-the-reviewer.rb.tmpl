@@ -22,7 +22,7 @@ class MarinaTheReviewer < Formula
       (testpath/"repo/main.go").write("package main\nfunc main() {}\n")
       system "git", "add", "main.go"
       system "git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "base"
-      (testpath/"repo/main.go").write("package main\nfunc main() { println(1) }\n")
+      (testpath/"repo/main.go").atomic_write("package main\nfunc main() { println(1) }\n")
       system "git", "add", "main.go"
       system "git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "head"
       system bin/"marinadoreview", "prepare", "--repo", ".", "--base", "HEAD~1", "--head", "HEAD",
