@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -14,6 +15,33 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
+
+func TestEscapedCredentialIsRedactedBeforePersistence(t *testing.T) {
+	const secret = "private-canary-token"
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":["\u0070rivate-canary-token"]}`}, "finish_reason": "stop"}}})
+	}))
+	defer a.Close()
+	c, route := routeFor(t, a.URL, "")
+	route.RuntimeSecrets = map[string]string{route.Primary.Name: secret}
+	p, e := BuildDocument(document(), route, "", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	dir := filepath.Join(t.TempDir(), "run")
+	result, e := Run(context.Background(), p, c, dir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	data, _ := json.Marshal(result)
+	if strings.Contains(string(data), secret) {
+		t.Fatal("escaped token entered result")
+	}
+	data, _ = os.ReadFile(filepath.Join(dir, "state.json"))
+	if strings.Contains(string(data), secret) {
+		t.Fatal("escaped token entered private state")
+	}
+}
 
 func TestResumeRejectsSupersededParentWithoutCoverage(t *testing.T) {
 	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(401) }))

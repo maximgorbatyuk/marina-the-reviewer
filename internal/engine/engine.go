@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -311,9 +312,7 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (R
 			}
 			started := time.Now().UTC()
 			response, callErr := ai.Complete(ctx, provider, token, ai.Request{SystemPrompt: w.Prepared.SystemPrompt, UserPrompt: user, Schema: review.ResponseSchema(), MaximumOutputTokens: w.Prepared.MaximumOutputTokens})
-			if token != "" {
-				response.Output = json.RawMessage(strings.ReplaceAll(string(response.Output), token, "[REDACTED]"))
-			}
+			response.Output = redactOutput(response.Output, tokens)
 			w.InFlight = false
 			w.Correction = ""
 			code := "success"
@@ -436,6 +435,63 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (R
 		return result, errors.New("review is incomplete; inspect result limitations and the private run journal")
 	}
 	return result, nil
+}
+
+func redactOutput(raw json.RawMessage, tokens map[string]string) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if !json.Valid(raw) || decoder.Decode(&value) != nil {
+		return nil
+	}
+	secrets := []string{}
+	for _, token := range tokens {
+		if token != "" {
+			secrets = append(secrets, token)
+		}
+	}
+	sort.Slice(secrets, func(i, j int) bool {
+		if len(secrets[i]) != len(secrets[j]) {
+			return len(secrets[i]) > len(secrets[j])
+		}
+		return secrets[i] < secrets[j]
+	})
+	redact := func(value string) string {
+		for _, token := range secrets {
+			if token != "" {
+				value = strings.ReplaceAll(value, token, "[REDACTED]")
+			}
+		}
+		return value
+	}
+	var visit func(any) any
+	visit = func(value any) any {
+		switch typed := value.(type) {
+		case string:
+			return redact(typed)
+		case []any:
+			for i, child := range typed {
+				typed[i] = visit(child)
+			}
+			return typed
+		case map[string]any:
+			result := map[string]any{}
+			for key, child := range typed {
+				result[redact(key)] = visit(child)
+			}
+			return result
+		default:
+			return value
+		}
+	}
+	encoded, err := json.Marshal(visit(value))
+	if err != nil {
+		return nil
+	}
+	return encoded
 }
 
 func scopeDocument(document review.Document, prepared review.PreparedBatch) review.Document {
