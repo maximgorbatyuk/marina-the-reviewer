@@ -11,14 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 )
 
 const MaximumDocumentBytes = 64 << 20
 
 type Store struct {
-	dir, planHash, lockValue string
+	dir, planHash string
+	lock          *os.File
 }
 
 type envelope struct {
@@ -57,27 +57,28 @@ func Open(dir, planHash string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, planHash: planHash, lockValue: strconv.Itoa(os.Getpid()) + "\n" + planHash}
+	s := &Store{dir: dir, planHash: planHash}
 	lock := filepath.Join(dir, "writer.lock")
-	f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if errors.Is(err, os.ErrExist) {
-		data, readErr := ReadPrivate(lock, 4096)
-		pid, parseErr := strconv.Atoi(strings.SplitN(string(data), "\n", 2)[0])
-		if readErr != nil || parseErr != nil || pid <= 1 || syscall.Kill(pid, 0) != syscall.ESRCH {
-			return nil, errors.New("run directory is locked by another writer")
-		}
-		if err = os.Remove(lock); err != nil {
-			return nil, err
-		}
-		f, err = os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	}
+	f, err := os.OpenFile(lock, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return nil, err
 	}
-	if _, err = f.WriteString(s.lockValue); err == nil {
+	info, err = f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || !owned(info) {
+		f.Close()
+		return nil, errors.New("writer lock must be a private regular file")
+	}
+	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, errors.New("run directory is locked by another writer")
+	}
+	s.lock = f
+	if err = f.Truncate(0); err == nil {
+		_, err = f.WriteString(strconv.Itoa(os.Getpid()) + "\n" + planHash)
+	}
+	if err == nil {
 		err = f.Sync()
 	}
-	f.Close()
 	if err != nil {
 		s.Close()
 		return nil, err
@@ -96,9 +97,10 @@ func Open(dir, planHash string) (*Store, error) {
 }
 
 func (s *Store) Close() {
-	path := filepath.Join(s.dir, "writer.lock")
-	if value, err := os.ReadFile(path); err == nil && string(value) == s.lockValue {
-		_ = os.Remove(path)
+	if s.lock != nil {
+		_ = syscall.Flock(int(s.lock.Fd()), syscall.LOCK_UN)
+		_ = s.lock.Close()
+		s.lock = nil
 	}
 }
 

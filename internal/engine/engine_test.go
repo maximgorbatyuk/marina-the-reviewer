@@ -45,6 +45,43 @@ func TestResumeRejectsSupersededParentWithoutCoverage(t *testing.T) {
 	}
 }
 
+func TestResumeRejectsReplacementChangedLineLoss(t *testing.T) {
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+	defer a.Close()
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { okModel(w) }))
+	defer b.Close()
+	c, route := routeFor(t, a.URL, b.URL)
+	p, e := BuildDocument(document(), route, "", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	dir := filepath.Join(t.TempDir(), "run")
+	if _, e = Run(context.Background(), p, c, dir); e != nil {
+		t.Fatal(e)
+	}
+	encoded, _ := json.Marshal(p)
+	store, e := runstore.Open(dir, review.Hash(string(encoded)))
+	if e != nil {
+		t.Fatal(e)
+	}
+	var saved state
+	if e = store.Read(&saved); e != nil {
+		t.Fatal(e)
+	}
+	saved.Works[1].Prepared.Input.Batch.Blocks[0].ChangedLines = []review.ChangedLine{}
+	saved.Works[1].Prepared, e = review.RefreshPrepared(saved.Works[1].Prepared)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = store.Write(saved); e != nil {
+		t.Fatal(e)
+	}
+	store.Close()
+	if result, e := Run(context.Background(), p, c, dir); e == nil || result.Status == "complete" {
+		t.Fatal("replacement lost changed-line ownership")
+	}
+}
+
 func TestPlanRejectsChangedPreparedSourceAndBudget(t *testing.T) {
 	_, route := routeFor(t, "http://127.0.0.1:1", "")
 	p, e := BuildDocument(document(), route, "", nil)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -58,6 +59,63 @@ func TestLockAndPlanIdentityProtectResume(t *testing.T) {
 	st, _ := os.Stat(filepath.Join(dir, "state.json"))
 	if st.Mode().Perm() != 0600 {
 		t.Fatalf("state mode: %v", st.Mode())
+	}
+}
+
+func TestWriterLockKeepsOneInodeAcrossResume(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "run")
+	a, e := Open(dir, "plan")
+	if e != nil {
+		t.Fatal(e)
+	}
+	before, e := os.Stat(filepath.Join(dir, "writer.lock"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	a.Close()
+	b, e := Open(dir, "plan")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer b.Close()
+	after, e := os.Stat(filepath.Join(dir, "writer.lock"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("writer lock inode replaced between runs")
+	}
+}
+
+func TestConcurrentResumeHasOneWriterAfterProcessExit(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "run")
+	if e := os.Mkdir(dir, 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.WriteFile(filepath.Join(dir, "writer.lock"), []byte("99999999\nplan"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	var workers sync.WaitGroup
+	owners := make(chan *Store, 32)
+	start := make(chan struct{})
+	for i := 0; i < 32; i++ {
+		workers.Go(func() {
+			<-start
+			if s, e := Open(dir, "plan"); e == nil {
+				owners <- s
+			}
+		})
+	}
+	close(start)
+	workers.Wait()
+	close(owners)
+	count := 0
+	for owner := range owners {
+		count++
+		owner.Close()
+	}
+	if count != 1 {
+		t.Fatalf("concurrent writers: %d", count)
 	}
 }
 func TestSymlinkAndUnrelatedDirectoryAreRejected(t *testing.T) {

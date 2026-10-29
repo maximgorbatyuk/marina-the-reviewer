@@ -531,8 +531,8 @@ func validateSavedResults(plan Plan, s state) error {
 					return e
 				}
 				for key, value := range lines {
-					if old, ok := actual[key]; ok && old != value {
-						return errors.New("replacement source lines disagree")
+					if _, ok := actual[key]; ok {
+						return errors.New("replacement source has duplicate line ownership")
 					}
 					actual[key] = value
 				}
@@ -592,11 +592,25 @@ func sourceLines(prepared review.PreparedBatch) (map[string]string, error) {
 			for index := 0; index < count; index++ {
 				key := fmt.Sprintf("%s\x00%d\x00%d", source.Path, source.Revision, source.StartLine+index)
 				value := review.Hash(lines[index])
-				if old, ok := result[key]; ok && old != value {
-					return nil, errors.New("saved source slices disagree")
+				if _, ok := result[key]; ok {
+					return nil, errors.New("saved source has duplicate line ownership")
 				}
 				result[key] = value
 			}
+		}
+		for _, line := range block.ChangedLines {
+			source := block.Base
+			if line.Revision == review.Head {
+				source = block.Head
+			}
+			if source == nil || line.Line < source.StartLine || line.Line > source.EndLine {
+				return nil, errors.New("saved changed line has no primary source")
+			}
+			key := fmt.Sprintf("changed\x00%s\x00%d\x00%d", source.Path, line.Revision, line.Line)
+			if _, ok := result[key]; ok {
+				return nil, errors.New("saved changed line has duplicate ownership")
+			}
+			result[key] = "changed"
 		}
 	}
 	return result, nil
