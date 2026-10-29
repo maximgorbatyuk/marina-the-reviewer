@@ -1,0 +1,32 @@
+name: Homebrew
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Update tap pull request
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo '::warning::Set HOMEBREW_TAP_TOKEN to enable automatic tap pull requests.'
+            exit 0
+          fi
+          python3 scripts/update_homebrew.py --tag "$RELEASE_TAG" --publish

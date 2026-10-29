@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "baselineCommit": {
+          "type": "string"
+        },
+        "protocolSha256": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "responseSchemaSha256": {
+          "type": "string"
+        },
+        "validationPolicyVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "baselineCommit",
+        "protocolVersion",
+        "validationPolicyVersion",
+        "responseSchemaSha256",
+        "protocolSha256"
+      ],
+      "type": "object"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "baseSha": {
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "base": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "commitSha": {
+                        "type": "string"
+                      },
+                      "content": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "revision": {
+                        "type": "integer"
+                      },
+                      "sha256": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "revision",
+                      "commitSha",
+                      "sha256",
+                      "content"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "changedLines": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "line": {
+                      "type": "integer"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "revision",
+                    "line"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "diff": {
+                "type": "string"
+              },
+              "head": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "commitSha": {
+                        "type": "string"
+                      },
+                      "content": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "revision": {
+                        "type": "integer"
+                      },
+                      "sha256": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "revision",
+                      "commitSha",
+                      "sha256",
+                      "content"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hunks": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "lines": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "newCount": {
+                      "type": "integer"
+                    },
+                    "newStart": {
+                      "type": "integer"
+                    },
+                    "oldCount": {
+                      "type": "integer"
+                    },
+                    "oldStart": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "oldStart",
+                    "oldCount",
+                    "newStart",
+                    "newCount",
+                    "lines"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "isBinary": {
+                "type": "boolean"
+              },
+              "isLfs": {
+                "type": "boolean"
+              },
+              "isSubmodule": {
+                "type": "boolean"
+              },
+              "newPath": {
+                "type": "string"
+              },
+              "oldPath": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "skipReason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "oldPath",
+              "newPath",
+              "operation",
+              "base",
+              "head",
+              "isBinary",
+              "isLfs",
+              "isSubmodule",
+              "diff",
+              "hunks",
+              "changedLines"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "isComplete": {
+          "type": "boolean"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "manifestSha256": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "startSha": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "repository",
+        "baseSha",
+        "startSha",
+        "headSha",
+        "manifestSha256",
+        "files",
+        "limitations",
+        "isComplete"
+      ],
+      "type": "object"
+    },
+    "task": {}
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "producer",
+    "compatibility",
+    "snapshot",
+    "task"
+  ],
+  "title": "review-snapshot",
+  "type": "object"
+}

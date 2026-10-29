@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "profiles": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "apiKey": {
+            "type": "string"
+          },
+          "apiKeyEnv": {
+            "type": "string"
+          },
+          "apiKeyFile": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "contextLength": {
+            "type": "integer"
+          },
+          "extraParameters": {
+            "additionalProperties": {},
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "maximumAttempts": {
+            "type": "integer"
+          },
+          "maximumConcurrentRequests": {
+            "type": "integer"
+          },
+          "maximumOutputTokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "outputTokenParameter": {
+            "type": "string"
+          },
+          "responseFormat": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "timeoutSeconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backend",
+          "baseUrl",
+          "model",
+          "responseFormat",
+          "outputTokenParameter",
+          "contextLength",
+          "maximumConcurrentRequests",
+          "timeoutSeconds",
+          "maximumAttempts",
+          "stream"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "routing": {
+      "additionalProperties": false,
+      "properties": {
+        "fallback": {
+          "type": "string"
+        },
+        "fallbackOn": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "primary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "primary"
+      ],
+      "type": "object"
+    },
+    "version": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "routing",
+    "profiles"
+  ],
+  "title": "config",
+  "type": "object"
+}

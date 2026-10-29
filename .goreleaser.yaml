@@ -1,0 +1,41 @@
+version: 2
+project_name: marina-the-reviewer
+
+builds:
+  - id: marinadoreview
+    main: ./cmd/marinadoreview
+    binary: marinadoreview
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    ldflags:
+      - -s -w -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version={{.Version}} -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Commit={{.FullCommit}} -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Date={{.Date}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+source:
+  enabled: true
+  name_template: '{{ .ProjectName }}_{{ .Version }}_source'
+  format: tar.gz
+
+release:
+  github:
+    owner: maximgorbatyuk
+    name: marina-the-reviewer
+  prerelease: auto
+
+changelog:
+  use: git

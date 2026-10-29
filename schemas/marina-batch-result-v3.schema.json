@@ -1,0 +1,644 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "filePath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "itemIndex": {
+            "type": "integer"
+          },
+          "output": {},
+          "reason": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "resultKind": {
+            "type": "string"
+          },
+          "reviewClusterId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewClusterId",
+          "resultKind",
+          "itemIndex",
+          "output",
+          "filePath",
+          "fingerprint",
+          "state"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "checkedBlockIds": {
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "claims": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "endLine": {
+            "type": "integer"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "invariantId": {
+            "type": "string"
+          },
+          "isStrength": {
+            "type": "boolean"
+          },
+          "startLine": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "invariantId",
+          "filePath",
+          "startLine",
+          "endLine",
+          "isStrength"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "dependencyRejections": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "callLine": {
+            "type": "integer"
+          },
+          "edgeId": {
+            "type": "string"
+          },
+          "evidenceBlockId": {
+            "type": "string"
+          },
+          "itemIndex": {
+            "type": "integer"
+          },
+          "resultKind": {
+            "type": "string"
+          },
+          "reviewClusterId": {
+            "type": "string"
+          },
+          "symbolId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewClusterId",
+          "resultKind",
+          "itemIndex",
+          "evidenceBlockId",
+          "edgeId",
+          "symbolId",
+          "callLine"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "duplicateRejections": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "rejectedFingerprint": {
+            "type": "string"
+          },
+          "retainedFingerprint": {
+            "type": "string"
+          },
+          "sharedBaseAnchors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "filePath": {
+                  "type": "string"
+                },
+                "isPrimary": {
+                  "type": "boolean"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "revisionSha": {
+                  "type": "string"
+                },
+                "sourceSha256": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "filePath",
+                "revision",
+                "revisionSha",
+                "line",
+                "sourceSha256",
+                "isPrimary"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "rejectedFingerprint",
+          "retainedFingerprint",
+          "reason",
+          "sharedBaseAnchors"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "evidenceCorrections": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actualEndLine": {
+            "type": "integer"
+          },
+          "actualStartLine": {
+            "type": "integer"
+          },
+          "blockId": {
+            "type": "string"
+          },
+          "canonicalQuoteSha256": {
+            "type": "string"
+          },
+          "correctionKind": {
+            "type": "string"
+          },
+          "declaredEndLine": {
+            "type": "integer"
+          },
+          "declaredStartLine": {
+            "type": "integer"
+          },
+          "itemIndex": {
+            "type": "integer"
+          },
+          "quoteSha256": {
+            "type": "string"
+          },
+          "resultKind": {
+            "type": "string"
+          },
+          "reviewClusterId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewClusterId",
+          "resultKind",
+          "itemIndex",
+          "blockId",
+          "revision",
+          "declaredStartLine",
+          "declaredEndLine",
+          "actualStartLine",
+          "actualEndLine",
+          "quoteSha256",
+          "canonicalQuoteSha256",
+          "correctionKind"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "findingWitnesses": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "anchors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "filePath": {
+                  "type": "string"
+                },
+                "isPrimary": {
+                  "type": "boolean"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "revisionSha": {
+                  "type": "string"
+                },
+                "sourceSha256": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "filePath",
+                "revision",
+                "revisionSha",
+                "line",
+                "sourceSha256",
+                "isPrimary"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "baseSha": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "hasPairedPrimaryEvidence": {
+            "type": "boolean"
+          },
+          "headSha": {
+            "type": "string"
+          },
+          "invariantId": {
+            "type": "string"
+          },
+          "isNewHelperOnly": {
+            "type": "boolean"
+          },
+          "ruleId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "ruleId",
+          "invariantId",
+          "hasPairedPrimaryEvidence",
+          "isNewHelperOnly",
+          "anchors",
+          "baseSha",
+          "headSha"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "number"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inlinePosition": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "newLine": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "newPath": {
+                    "type": "string"
+                  },
+                  "oldLine": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "oldPath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "oldPath",
+                  "newPath",
+                  "oldLine",
+                  "newLine"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inlineSuppressionReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "newLine": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oldLine": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purpose": {
+            "type": "integer"
+          },
+          "reviewChunkId": {
+            "type": "string"
+          },
+          "reviewPassId": {
+            "type": "string"
+          },
+          "reviewRunId": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reviewRunId",
+          "reviewPassId",
+          "reviewChunkId",
+          "purpose",
+          "ruleId",
+          "filePath",
+          "oldLine",
+          "newLine",
+          "severity",
+          "title",
+          "message",
+          "evidence",
+          "confidence",
+          "fingerprint",
+          "inlinePosition",
+          "inlineSuppressionReason"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "isComplete": {
+      "type": "boolean"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "modelOutputSha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rejectedItemCount": {
+      "type": "integer"
+    },
+    "strengths": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "number"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "newLine": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oldLine": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purpose": {
+            "type": "integer"
+          },
+          "reviewChunkId": {
+            "type": "string"
+          },
+          "reviewPassId": {
+            "type": "string"
+          },
+          "reviewRunId": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewRunId",
+          "reviewPassId",
+          "reviewChunkId",
+          "purpose",
+          "ruleId",
+          "filePath",
+          "oldLine",
+          "newLine",
+          "title",
+          "message",
+          "evidence",
+          "confidence",
+          "fingerprint"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "unconfirmedDependencies": {
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "validationPolicyVersion": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "findings",
+    "strengths",
+    "limitations",
+    "isComplete",
+    "checkedBlockIds",
+    "unconfirmedDependencies",
+    "rejectedItemCount",
+    "validationPolicyVersion",
+    "modelOutputSha256",
+    "candidates",
+    "claims",
+    "evidenceCorrections",
+    "dependencyRejections",
+    "findingWitnesses",
+    "duplicateRejections"
+  ],
+  "title": "marina-batch-result-v3",
+  "type": "object"
+}

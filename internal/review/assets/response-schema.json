@@ -1,0 +1,16 @@
+{"type":"object","additionalProperties":false,"required":["checkedBlockIds","findings","strengths","unconfirmedDependencies"],"properties":{
+"checkedBlockIds":{"type":"array","items":{"type":"string"}},
+"findings":{"type":"array","maxItems":12,"items":{"$ref":"#/$defs/finding"}},
+"strengths":{"type":"array","maxItems":3,"items":{"$ref":"#/$defs/strength"}},
+"unconfirmedDependencies":{"type":"array","maxItems":20,"items":{"type":"string"}}},
+"$defs":{
+"evidence":{"type":"object","additionalProperties":false,"required":["blockId","revision","startLine","endLine","quote"],"properties":{
+"blockId":{"type":"string"},"revision":{"type":"string","enum":["base","head"]},"startLine":{"type":"integer","minimum":1},"endLine":{"type":"integer","minimum":1},"quote":{"type":"string","minLength":1,"maxLength":1200}}},
+"finding":{"type":"object","additionalProperties":false,"required":["blockId","ruleId","invariantId","severity","title","message","confidence","evidence","requiredSymbolIds","graphEdgeIds"],"properties":{
+"invariantId":{"type":"string","minLength":1,"maxLength":128},
+"blockId":{"type":"string"},"ruleId":{"type":"string","minLength":1,"maxLength":128},"severity":{"type":"string","enum":["Warning","Error","Critical"]},"title":{"type":"string","minLength":1,"maxLength":512},"message":{"type":"string","minLength":1,"maxLength":4000},"confidence":{"type":"number","minimum":0,"maximum":1},
+"evidence":{"type":"array","minItems":1,"maxItems":6,"items":{"$ref":"#/$defs/evidence"}},"requiredSymbolIds":{"type":"array","items":{"type":"string"}},"graphEdgeIds":{"type":"array","items":{"type":"string"}}}},
+"strength":{"type":"object","additionalProperties":false,"required":["blockId","ruleId","invariantId","title","message","confidence","evidence","requiredSymbolIds","graphEdgeIds"],"properties":{
+"invariantId":{"type":"string","minLength":1,"maxLength":128},
+"blockId":{"type":"string"},"ruleId":{"type":"string","minLength":1,"maxLength":128},"title":{"type":"string","minLength":1,"maxLength":512},"message":{"type":"string","minLength":1,"maxLength":4000},"confidence":{"type":"number","minimum":0,"maximum":1},
+"evidence":{"type":"array","minItems":1,"maxItems":6,"items":{"$ref":"#/$defs/evidence"}},"requiredSymbolIds":{"type":"array","items":{"type":"string"}},"graphEdgeIds":{"type":"array","items":{"type":"string"}}}}}}

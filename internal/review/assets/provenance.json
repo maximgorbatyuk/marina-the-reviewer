@@ -1,0 +1,9 @@
+{
+  "baseline": "acd37b498f1c9367b4044e8f9d5ad55b90617e59",
+  "source": "SignificantReviewProtocol.cs",
+  "sha256": {
+    "response-schema.json": "d7918d73d7c795b2afc5ade524b3081d4497819cf547d592b66281fcf0f88486",
+    "architecture-prompt.txt": "e6bdb6fee3dc5720c2863c69f09cc84710d90465b130b2a8d7a3c2c0fa5968a3",
+    "protocol.txt": "af3f160e7b16e13e90b6a762a46970c570fcecf91e5dc60c51e0bfa86eb7881c"
+  }
+}

@@ -1,0 +1,667 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "additionalProperties": false,
+      "properties": {
+        "availableUserInputTokens": {
+          "type": "integer"
+        },
+        "contextLength": {
+          "type": "integer"
+        },
+        "estimatedSchemaTokens": {
+          "type": "integer"
+        },
+        "estimatedSystemTokens": {
+          "type": "integer"
+        },
+        "fixedOverheadTokens": {
+          "type": "integer"
+        },
+        "reservedOutputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contextLength",
+        "reservedOutputTokens",
+        "estimatedSystemTokens",
+        "estimatedSchemaTokens",
+        "fixedOverheadTokens",
+        "availableUserInputTokens"
+      ],
+      "type": "object"
+    },
+    "estimatedInputTokens": {
+      "type": "integer"
+    },
+    "estimationMethod": {
+      "type": "string"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "baseSha": {
+          "type": "string"
+        },
+        "batch": {
+          "additionalProperties": false,
+          "properties": {
+            "blocks": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "base": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "content": {
+                            "type": "string"
+                          },
+                          "endLine": {
+                            "type": "integer"
+                          },
+                          "isComplete": {
+                            "type": "boolean"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "startLine": {
+                            "type": "integer"
+                          },
+                          "symbolEndLine": {
+                            "type": "integer"
+                          },
+                          "symbolStartLine": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision",
+                          "startLine",
+                          "endLine",
+                          "content",
+                          "symbolStartLine",
+                          "symbolEndLine",
+                          "isComplete"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "baseExists": {
+                    "type": "boolean"
+                  },
+                  "changedLines": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "line": {
+                          "type": "integer"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "revision",
+                        "line"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "filePath": {
+                    "type": "string"
+                  },
+                  "head": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "content": {
+                            "type": "string"
+                          },
+                          "endLine": {
+                            "type": "integer"
+                          },
+                          "isComplete": {
+                            "type": "boolean"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "startLine": {
+                            "type": "integer"
+                          },
+                          "symbolEndLine": {
+                            "type": "integer"
+                          },
+                          "symbolStartLine": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision",
+                          "startLine",
+                          "endLine",
+                          "content",
+                          "symbolStartLine",
+                          "symbolEndLine",
+                          "isComplete"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "headExists": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "limitations": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "originalBlockId": {
+                    "type": "string"
+                  },
+                  "partCount": {
+                    "type": "integer"
+                  },
+                  "partIndex": {
+                    "type": "integer"
+                  },
+                  "structuralContext": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "endLine": {
+                          "type": "integer"
+                        },
+                        "isComplete": {
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "startLine": {
+                          "type": "integer"
+                        },
+                        "symbolEndLine": {
+                          "type": "integer"
+                        },
+                        "symbolStartLine": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "revision",
+                        "startLine",
+                        "endLine",
+                        "content",
+                        "symbolStartLine",
+                        "symbolEndLine",
+                        "isComplete"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "symbolIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "filePath",
+                  "kind",
+                  "symbolIds",
+                  "base",
+                  "head",
+                  "changedLines",
+                  "originalBlockId",
+                  "baseExists",
+                  "headExists",
+                  "partIndex",
+                  "partCount",
+                  "limitations",
+                  "structuralContext"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "count": {
+              "type": "integer"
+            },
+            "fileParts": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "index": {
+                    "type": "integer"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "index",
+                  "count"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "graphSha256": {
+              "type": "string"
+            },
+            "index": {
+              "type": "integer"
+            },
+            "isWholeReview": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "index",
+            "count",
+            "blocks",
+            "graphSha256",
+            "fileParts",
+            "isWholeReview"
+          ],
+          "type": "object"
+        },
+        "graph": {
+          "additionalProperties": false,
+          "properties": {
+            "edges": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "change": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "invokedName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reasons": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "receiverType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resolution": {
+                    "type": "integer"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "sourceId": {
+                    "type": "string"
+                  },
+                  "targetIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "sourceId",
+                  "targetIds",
+                  "revision",
+                  "line",
+                  "invokedName",
+                  "receiverType",
+                  "resolution",
+                  "change",
+                  "confidence",
+                  "reasons"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "limitations": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "nodes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "change": {
+                    "type": "integer"
+                  },
+                  "counterpartAbsent": {
+                    "type": "boolean"
+                  },
+                  "counterpartId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "declaringType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "endLine": {
+                    "type": "integer"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "signature": {
+                    "type": "string"
+                  },
+                  "sourceSymbolId": {
+                    "type": "string"
+                  },
+                  "startLine": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "sourceSymbolId",
+                  "path",
+                  "declaringType",
+                  "name",
+                  "signature",
+                  "kind",
+                  "revision",
+                  "change",
+                  "startLine",
+                  "endLine",
+                  "counterpartId",
+                  "counterpartAbsent"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "sha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "nodes",
+            "edges",
+            "limitations",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "manifestSha256": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "integer"
+        },
+        "startSha": {
+          "type": "string"
+        },
+        "task": {},
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "purpose",
+        "baseSha",
+        "startSha",
+        "headSha",
+        "manifestSha256",
+        "graph",
+        "batch",
+        "limitations",
+        "task"
+      ],
+      "type": "object"
+    },
+    "inputSha256": {
+      "type": "string"
+    },
+    "maximumOutputTokens": {
+      "type": "integer"
+    },
+    "outputRecoveryEnabled": {
+      "type": "boolean"
+    },
+    "parentTaskId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "replanDepth": {
+      "type": "integer"
+    },
+    "systemPrompt": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "tokenCount": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "isExact": {
+              "type": "boolean"
+            },
+            "limitation": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            },
+            "schemaReserveTokens": {
+              "type": "integer"
+            },
+            "schemaTokenizationMethod": {
+              "type": "string"
+            },
+            "templatedInputTokens": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "templatedInputTokens",
+            "schemaReserveTokens",
+            "method",
+            "isExact",
+            "limitation",
+            "schemaTokenizationMethod"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "userPrompt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "input",
+    "title",
+    "systemPrompt",
+    "userPrompt",
+    "budget",
+    "estimatedInputTokens",
+    "estimationMethod",
+    "inputSha256",
+    "outputRecoveryEnabled",
+    "maximumOutputTokens",
+    "tokenCount",
+    "parentTaskId",
+    "replanDepth"
+  ],
+  "title": "marina-prepared-batch-v3",
+  "type": "object"
+}
