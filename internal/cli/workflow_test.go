@@ -8,12 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 )
 
 func TestGitToReviewAndResume(t *testing.T) {
+	t.Setenv("MTR_TEST_CLI_KEY", "synthetic-test-key")
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
 	if err := os.Mkdir(repo, 0700); err != nil {
@@ -63,7 +63,7 @@ func TestGitToReviewAndResume(t *testing.T) {
 	}))
 	defer server.Close()
 	conf := filepath.Join(dir, "config.json")
-	os.WriteFile(conf, []byte(`{"version":1,"routing":{"primary":"local"},"profiles":{"local":{"baseUrl":"`+server.URL+`","model":"fake","contextLength":65536}}}`), 0600)
+	os.WriteFile(conf, []byte(`{"version":1,"routing":{"primary":"local"},"profiles":{"local":{"baseUrl":"`+server.URL+`","model":"fake","apiKeyEnv":"MTR_TEST_CLI_KEY","contextLength":65536}}}`), 0600)
 	invoke := func(args ...string) map[string]any {
 		t.Helper()
 		var out, errs bytes.Buffer
@@ -108,10 +108,7 @@ func TestGitToReviewAndResume(t *testing.T) {
 	if batch["input"] == nil || batch["inputSha256"] == nil {
 		t.Fatal("batch export missing input identity")
 	}
-	providerConfig, _ := os.ReadFile(conf)
-	providerConfig = []byte(strings.Replace(string(providerConfig), `"model":"fake"`, `"model":"fake","apiKeyEnv":"MTR_TEST_MISSING_KEY"`, 1))
-	os.WriteFile(conf, providerConfig, 0600)
-	t.Setenv("MTR_TEST_MISSING_KEY", "")
+	t.Setenv("MTR_TEST_CLI_KEY", "")
 	var missingOut, missingErr bytes.Buffer
 	if code := Run([]string{"run", "--input", plan, "--config", conf, "--run-dir", filepath.Join(dir, "missing-credentials")}, &bytes.Buffer{}, &missingOut, &missingErr); code != 2 {
 		t.Fatalf("missing credentials exit %d: %s", code, missingErr.String())

@@ -246,8 +246,12 @@ func snapshot(cfg Config, name string) (ProviderSnapshot, error) {
 	if err := normalize(&profile); err != nil {
 		return ProviderSnapshot{}, err
 	}
+	auth := SecretSource{Kind: "profile", Name: name}
+	if profile.APIKey == "" && profile.APIKeyEnv == "" && profile.APIKeyFile == "" {
+		auth = SecretSource{Kind: "none"}
+	}
 	profile.APIKey, profile.APIKeyEnv, profile.APIKeyFile = "", "", ""
-	return ProviderSnapshot{Name: name, Profile: profile, Auth: SecretSource{Kind: "profile", Name: name}}, nil
+	return ProviderSnapshot{Name: name, Profile: profile, Auth: auth}, nil
 }
 
 func ResolveToken(provider ProviderSnapshot, cfg Config, ephemeral map[string]string) (string, error) {

@@ -573,7 +573,18 @@ func Analyze(snapshot Snapshot) (Document, error) {
 	for _, a := range analyses {
 		for _, source := range []*SourceSnapshot{a.file.Base, a.file.Head} {
 			if source != nil {
-				fileVariables[fmt.Sprintf("%d|%s", source.Revision, source.Path)] = variableTypes(source.Content)
+				types := variableTypes(source.Content)
+				fileVariables[fmt.Sprintf("%d|%s", source.Revision, source.Path)] = types
+				conflicts := []string{}
+				for name, typ := range types {
+					if typ == "" {
+						conflicts = append(conflicts, name)
+					}
+				}
+				slices.SortFunc(conflicts, ordinalCompare)
+				for _, name := range conflicts {
+					d.Graph.Limitations = append(d.Graph.Limitations, fmt.Sprintf("%s: receiver variable %q has conflicting declaration types across scopes; calls through that name remain unresolved.", source.Path, name))
+				}
 			}
 		}
 	}
@@ -593,21 +604,29 @@ func Analyze(snapshot Snapshot) (Document, error) {
 				receiver = masked[m[2]:m[3]]
 			}
 			receiverType := receiver
+			unknownReceiver := false
 			if receiver == "" || receiver == "this" {
 				if s.node.DeclaringType != nil {
 					receiverType = *s.node.DeclaringType
 				}
 			} else {
-				if v := fileVariables[fmt.Sprintf("%d|%s", s.node.Revision, s.node.Path)][receiver]; v != "" {
-					receiverType = v
-				}
-				if v := variableTypes(s.content)[receiver]; v != "" {
-					receiverType = v
+				fileType, fileKnown := fileVariables[fmt.Sprintf("%d|%s", s.node.Revision, s.node.Path)][receiver]
+				methodType, methodKnown := variableTypes(s.content)[receiver]
+				if fileKnown && fileType == "" || methodKnown && methodType == "" {
+					unknownReceiver = true
+					receiverType = ""
+				} else if methodKnown {
+					receiverType = methodType
+				} else if fileKnown {
+					receiverType = fileType
 				}
 			}
 			arity := invocationArity(s.content, m[1]-1)
 			targets := []string{}
 			for _, target := range d.Graph.Nodes {
+				if unknownReceiver {
+					continue
+				}
 				if target.Kind != 4 || target.Revision != s.node.Revision || target.Name != name {
 					continue
 				}

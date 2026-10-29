@@ -12,7 +12,38 @@ import (
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
+
+func TestResumeRejectsSupersededParentWithoutCoverage(t *testing.T) {
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(401) }))
+	defer a.Close()
+	c, route := routeFor(t, a.URL, "")
+	p, e := BuildDocument(document(), route, "", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	dir := filepath.Join(t.TempDir(), "run")
+	Run(context.Background(), p, c, dir)
+	encoded, _ := json.Marshal(p)
+	store, e := runstore.Open(dir, review.Hash(string(encoded)))
+	if e != nil {
+		t.Fatal(e)
+	}
+	var saved state
+	if e = store.Read(&saved); e != nil {
+		t.Fatal(e)
+	}
+	saved.Works[0].Superseded = true
+	saved.Works[0].Failure = ""
+	if e = store.Write(saved); e != nil {
+		t.Fatal(e)
+	}
+	store.Close()
+	if result, e := Run(context.Background(), p, c, dir); e == nil || result.Status == "complete" {
+		t.Fatal("orphan supersession accepted as complete")
+	}
+}
 
 func TestPlanRejectsChangedPreparedSourceAndBudget(t *testing.T) {
 	_, route := routeFor(t, "http://127.0.0.1:1", "")

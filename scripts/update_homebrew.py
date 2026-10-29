@@ -44,8 +44,9 @@ def gh(*args: str, payload=None):
     return result.stdout.strip()
 
 
-def api(path: str, payload=None):
-    return json.loads(gh("api", path, payload=payload))
+def api(path: str, payload=None, method=None):
+    options = ("--method", method) if method else ()
+    return json.loads(gh("api", path, *options, payload=payload))
 
 
 def main():
@@ -85,7 +86,7 @@ def main():
         else:
             payload["sha"] = existing["sha"]
     if payload:
-        api(f"repos/{TAP}/contents/{FORMULA}", payload)
+        api(f"repos/{TAP}/contents/{FORMULA}", payload, method="PUT")
     prs = json.loads(gh("pr", "list", "--repo", TAP, "--head", branch, "--state", "open", "--json", "url"))
     if prs:
         print(prs[0]["url"])

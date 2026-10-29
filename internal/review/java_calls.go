@@ -18,7 +18,11 @@ func variableTypes(source string) map[string]string {
 		case "return", "new", "throw", "public", "private", "protected", "static", "final":
 			continue
 		}
-		out[m[2]] = name
+		if prior, exists := out[m[2]]; exists && prior != name {
+			out[m[2]] = ""
+		} else if !exists {
+			out[m[2]] = name
+		}
 	}
 	return out
 }

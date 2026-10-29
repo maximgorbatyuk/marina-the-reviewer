@@ -473,6 +473,12 @@ func scopeDocument(document review.Document, prepared review.PreparedBatch) revi
 func validateSavedResults(plan Plan, s state) error {
 	roots := 0
 	ids := map[string]bool{}
+	children := map[string][]work{}
+	for _, w := range s.Works {
+		if w.ParentID != "" {
+			children[w.ParentID] = append(children[w.ParentID], w)
+		}
+	}
 	for _, w := range s.Works {
 		if ids[w.ID] || w.ID == "" {
 			return errors.New("saved run contains duplicate work identities")
@@ -493,6 +499,54 @@ func validateSavedResults(plan Plan, s state) error {
 			roots++
 		} else if !ids[w.ParentID] {
 			return errors.New("saved work has an unknown parent")
+		}
+		if w.Prepared.InputSha256 != review.Hash(w.Prepared.UserPrompt) || w.Prepared.UserPrompt != review.SerializeInput(w.Prepared.Input) {
+			return errors.New("saved work input identity is invalid")
+		}
+		if w.Prepared.ReplanDepth < 0 || w.Prepared.ReplanDepth > 3 {
+			return errors.New("saved work exceeds the replan limit")
+		}
+		descendants := children[w.ID]
+		if w.Superseded {
+			if len(descendants) == 0 || w.Result != nil {
+				return errors.New("superseded work has no replacement source coverage")
+			}
+			wanted, e := sourceLines(w.Prepared)
+			if e != nil {
+				return e
+			}
+			actual := map[string]string{}
+			for _, child := range descendants {
+				if w.Role == "fallback" && child.Role != "fallback" || child.Prepared.ReplanDepth < w.Prepared.ReplanDepth {
+					return errors.New("saved work reset provider or replan lineage")
+				}
+				if child.Prepared.Input.ManifestSha256 != w.Prepared.Input.ManifestSha256 || child.Prepared.Input.BaseSha != w.Prepared.Input.BaseSha || child.Prepared.Input.StartSha != w.Prepared.Input.StartSha || child.Prepared.Input.HeadSha != w.Prepared.Input.HeadSha || child.Prepared.Input.Graph.Sha256 != w.Prepared.Input.Graph.Sha256 {
+					return errors.New("replacement source identity differs from its parent")
+				}
+				if w.RepairUsed && !child.RepairUsed {
+					return errors.New("replacement work reset the correction limit")
+				}
+				lines, e := sourceLines(child.Prepared)
+				if e != nil {
+					return e
+				}
+				for key, value := range lines {
+					if old, ok := actual[key]; ok && old != value {
+						return errors.New("replacement source lines disagree")
+					}
+					actual[key] = value
+				}
+			}
+			if len(wanted) != len(actual) {
+				return errors.New("replacement source coverage is incomplete")
+			}
+			for key, value := range wanted {
+				if actual[key] != value {
+					return errors.New("replacement source content differs from its parent")
+				}
+			}
+		} else if len(descendants) != 0 {
+			return errors.New("active work has unexpected replacements")
 		}
 		if w.Result != nil {
 			var raw string
@@ -521,6 +575,31 @@ func validateSavedResults(plan Plan, s state) error {
 		return errors.New("saved run is missing planned source batches")
 	}
 	return nil
+}
+
+func sourceLines(prepared review.PreparedBatch) (map[string]string, error) {
+	result := map[string]string{}
+	for _, block := range prepared.Input.Batch.Blocks {
+		for _, source := range []*review.CodeSlice{block.Base, block.Head} {
+			if source == nil {
+				continue
+			}
+			lines := strings.Split(strings.ReplaceAll(source.Content, "\r\n", "\n"), "\n")
+			count := source.EndLine - source.StartLine + 1
+			if source.StartLine < 1 || count < 1 || len(lines) < count {
+				return nil, errors.New("saved source slice has invalid line geometry")
+			}
+			for index := 0; index < count; index++ {
+				key := fmt.Sprintf("%s\x00%d\x00%d", source.Path, source.Revision, source.StartLine+index)
+				value := review.Hash(lines[index])
+				if old, ok := result[key]; ok && old != value {
+					return nil, errors.New("saved source slices disagree")
+				}
+				result[key] = value
+			}
+		}
+	}
+	return result, nil
 }
 
 func allowed(values []string, target string) bool {

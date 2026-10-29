@@ -49,6 +49,17 @@ func TestRuntimeCredentialOverrideIsPrimaryOnly(t *testing.T) {
 		t.Fatal("runtime credential leaked into fallback")
 	}
 }
+
+func TestUnauthenticatedSnapshotDoesNotDependOnConfigAtRunTime(t *testing.T) {
+	c := Config{Version: 1, Routing: Routing{Primary: "local"}, Profiles: map[string]Profile{"local": {BaseURL: "http://127.0.0.1:1234", Model: "local"}}}
+	r, e := ResolveRouting(c, Overrides{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if token, e := ResolveToken(r.Primary, Config{}, nil); e != nil || token != "" {
+		t.Fatalf("local plan requires configuration: %v", e)
+	}
+}
 func TestRoutingSnapshotsHideKeys(t *testing.T) {
 	c := example()
 	r, err := ResolveRouting(c, Overrides{})

@@ -145,6 +145,8 @@ marinadoreview compat export --input result.json --format marina-v3 --output mar
 
 Import also accepts a bundle with `batch` or `plan` and `document`. It checks source, manifest and graph identity. It never follows artifact paths or reads a Marina database. Re-planning an imported document is explicit; local fallback defaults are not silently attached to an imported fixed request.
 
+`compat export --input plan.json --format marina-v3` exports a prepared plan; add `--batch 1` for a single prepared batch. Raw model archives and stored batch results round-trip through a labeled `MarinaArtifact` wrapper. Importing a stored result does not claim fresh source validation; `validate` performs that check with its prepared input.
+
 Validation enforces exact checked-block coverage, evidence quotes/ranges/revisions, graph references, required source context, changed-line anchors and inline positions. Rejections and duplicate suppression remain in the candidate audit. Fingerprints and .NET GUID derivation preserve the baseline behavior. A complete review can still report defects.
 
 See [compatibility notes](docs/compatibility.md) for tested parity and parser differences. `schemas/` contains JSON shape schemas. Go validation adds source integrity and semantic checks beyond those schemas.

@@ -39,3 +39,14 @@ func TestUnknownArchiveProtocolIsRejected(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 }
+
+func TestAuditStrippedResultRemainsAnUnvalidatedArtifact(t *testing.T) {
+	raw := json.RawMessage(`{"Findings":[],"Strengths":[],"CheckedBlockIds":[],"IsComplete":true,"ValidationPolicyVersion":0}`)
+	a, ok, e := importArtifact(raw)
+	if e != nil || !ok || a.ArtifactType != "SignificantReviewBatchResult" {
+		t.Fatalf("valid policy0 DTO rejected: %v", e)
+	}
+	if a.Kind != "MarinaArtifact" {
+		t.Fatal("import claimed fresh validation")
+	}
+}

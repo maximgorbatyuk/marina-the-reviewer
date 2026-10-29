@@ -37,7 +37,7 @@ func importArtifact(raw json.RawMessage) (marinaArtifact, bool, error) {
 		kind = "ReviewModelOutputArchive"
 	} else if probe.IsComplete != nil && len(probe.Findings) > 0 && len(probe.CheckedBlockIDs) > 0 {
 		var r review.BatchResult
-		if json.Unmarshal(raw, &r) != nil || r.Findings == nil || r.Strengths == nil || r.CheckedBlockIDs == nil || r.ValidationPolicyVersion < 1 || r.ValidationPolicyVersion > 2 {
+		if json.Unmarshal(raw, &r) != nil || r.Findings == nil || r.Strengths == nil || r.CheckedBlockIDs == nil || r.ValidationPolicyVersion < 0 || r.ValidationPolicyVersion > 2 {
 			return marinaArtifact{}, true, errors.New("invalid batch result artifact")
 		}
 		kind = "SignificantReviewBatchResult"

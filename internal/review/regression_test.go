@@ -118,3 +118,23 @@ func TestRefreshPreparedUpdatesInputIdentityAfterScopeChange(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func TestJavaReceiverConflictsDoNotSelectAnotherMethodsParameter(t *testing.T) {
+	source := "class A {\n B service;\n int f() {\n  return service.g();\n }\n void h(C service) {}\n}\nclass B {\n int g() { return 1; }\n}\nclass C {\n int g() { return 2; }\n}\n"
+	d, e := Analyze(Snapshot{IsComplete: true, Files: []FileSnapshot{{OldPath: "A.java", NewPath: "A.java", Operation: "A", Head: &SourceSnapshot{Path: "A.java", Revision: Head, Content: source}, ChangedLines: []ChangedLine{{Head, 4}}}}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, edge := range d.Graph.Edges {
+		if edge.Kind != "call" || edge.InvokedName == nil || *edge.InvokedName != "g" {
+			continue
+		}
+		if edge.Resolution != 2 || len(edge.TargetIDs) != 0 {
+			t.Fatalf("a conflicting receiver selected a method from another scope: %+v", edge)
+		}
+		if !strings.Contains(strings.Join(d.Graph.Limitations, "\n"), "conflicting declaration types") {
+			t.Fatal("receiver conflict was not recorded as a limitation")
+		}
+		return
+	}
+	t.Fatal("receiver call is missing")
+}

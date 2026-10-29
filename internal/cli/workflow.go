@@ -230,7 +230,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 			plan, e = engine.Build(s, route, prompt)
 		case "ReviewPlan":
 			var old engine.Plan
-			if json.Unmarshal(raw, &old) != nil {
+			if json.Unmarshal(raw, &old) != nil || old.SchemaVersion != 1 || old.Compatibility != engine.Contract() {
 				return fail(errors.New("invalid plan"), 5)
 			}
 			var task json.RawMessage
@@ -243,7 +243,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 			plan, e = engine.BuildDocument(old.Document, route, prompt, task)
 		case "ReviewDocument":
 			var doc engine.Document
-			if json.Unmarshal(raw, &doc) != nil || doc.SchemaVersion != 1 {
+			if json.Unmarshal(raw, &doc) != nil || doc.SchemaVersion != 1 || doc.Compatibility != engine.Contract() {
 				return fail(errors.New("invalid review document"), 5)
 			}
 			plan, e = engine.BuildDocument(doc.Document, route, prompt, doc.Task)

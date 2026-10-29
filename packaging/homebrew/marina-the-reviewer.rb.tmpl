@@ -11,7 +11,7 @@ class MarinaTheReviewer < Formula
   def install
     ldflags = "-s -w -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version=#{version} " \
               "-X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Commit=@COMMIT@"
-    system "go", "build", *std_go_args(ldflags: ldflags), "./cmd/marinadoreview"
+    system "go", "build", *std_go_args(output: bin/"marinadoreview", ldflags: ldflags), "./cmd/marinadoreview"
   end
 
   test do
