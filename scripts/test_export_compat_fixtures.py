@@ -1,4 +1,5 @@
 import importlib.util
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -68,6 +69,29 @@ class ExportFixturesTests(unittest.TestCase):
         self.assertTrue(manifest["syntheticOnly"])
         self.assertEqual(len(manifest["sourceHashes"]), 2)
         self.assertEqual(json.loads((self.root / "fixtures" / "stages.json").read_text()), {"syntheticOnly": True})
+
+    def test_generation_uses_one_physical_temp_path(self):
+        physical = self.root / "physical-temp"
+        physical.mkdir()
+        alias = self.root / "temp-alias"
+        alias.symlink_to(physical, target_is_directory=True)
+        original = subprocess.run
+
+        def run(command, **kwargs):
+            if command[0] != "dotnet":
+                return original(command, **kwargs)
+            selected = next(arg for arg in command if arg.startswith("--property:MarinaSource="))
+            selected_path = Path(selected.split("=", 1)[1])
+            self.assertEqual(selected_path, selected_path.resolve())
+            self.assertEqual(Path(kwargs["cwd"]), physical.resolve())
+            project = Path(command[command.index("--project") + 1])
+            self.assertEqual(project, project.resolve())
+            Path(command[-1]).write_text('{"syntheticOnly":true}\n')
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(EXPORT.tempfile, "TemporaryDirectory", return_value=contextlib.nullcontext(str(alias))):
+            with patch.object(EXPORT.subprocess, "run", side_effect=run):
+                EXPORT.generate(self.repo, self.root / "fixtures", self.baseline)
 
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ class MarinaTheReviewer < Formula
   depends_on "git"
 
   def install
-    ldflags = "-s -w -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version=#{version} " \
-              "-X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Commit=@COMMIT@"
+    buildinfo = "github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo"
+    ldflags = "-s -w -X #{buildinfo}.Version=#{version} -X #{buildinfo}.Commit=@COMMIT@"
     system "go", "build", *std_go_args(output: bin/"marinadoreview", ldflags: ldflags), "./cmd/marinadoreview"
   end
 
@@ -25,7 +25,8 @@ class MarinaTheReviewer < Formula
       (testpath/"repo/main.go").write("package main\nfunc main() { println(1) }\n")
       system "git", "add", "main.go"
       system "git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "head"
-      system bin/"marinadoreview", "prepare", "--repo", ".", "--base", "HEAD~1", "--head", "HEAD", "--output", "snapshot.json"
+      system bin/"marinadoreview", "prepare", "--repo", ".", "--base", "HEAD~1", "--head", "HEAD",
+             "--output", "snapshot.json"
       assert_path_exists testpath/"repo/snapshot.json"
       system bin/"marinadoreview", "plan", "--input", "snapshot.json", "--base-url", "http://127.0.0.1:1",
              "--model", "offline-test", "--no-fallback", "--output", "plan.json"

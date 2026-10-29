@@ -43,7 +43,7 @@ def isolated_source(source: Path, destination: Path, baseline: str) -> Path:
 def generate(source: Path, output: Path, baseline: str = BASELINE) -> dict:
     root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix="marina-oracle-") as temp:
-        work = Path(temp)
+        work = Path(temp).resolve()
         copied = isolated_source(source, work / "source", baseline)
         harness = work / "oracle"
         shutil.copytree(root / "tools" / "compat-oracle", harness,
