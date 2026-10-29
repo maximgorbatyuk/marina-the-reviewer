@@ -9,6 +9,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 from urllib.parse import quote
 
@@ -42,7 +43,15 @@ def gh(*args: str, payload=None):
     if payload is not None:
         command += ["--input", "-"]
         data = json.dumps(payload)
-    result = subprocess.run(command, input=data, text=True, capture_output=True, check=True)
+    try:
+        result = subprocess.run(command, input=data, text=True, capture_output=True, check=True)
+    except subprocess.CalledProcessError as error:
+        details = (error.stderr or "GitHub command failed").strip()
+        for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+            secret = os.environ.get(name)
+            if secret:
+                details = details.replace(secret, "[REDACTED]")
+        raise RuntimeError(details) from None
     return result.stdout.strip()
 
 
@@ -200,4 +209,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, RuntimeError) as error:
+        print(f"Homebrew update failed: {error}", file=sys.stderr)
+        sys.exit(1)

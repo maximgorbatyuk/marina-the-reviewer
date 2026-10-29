@@ -1,6 +1,7 @@
 import base64
 import json
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -156,3 +157,10 @@ class HomebrewUpdateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 update.write_outputs({"branch": "safe\nchanged=true"}, str(path))
             self.assertFalse(path.exists())
+
+    def test_github_error_keeps_permission_detail_and_redacts_token(self):
+        failure = subprocess.CalledProcessError(1, ["gh"], stderr="Resource not accessible by personal access token: private-test-token")
+        with patch.dict(update.os.environ, {"GH_TOKEN": "private-test-token"}), patch.object(update.subprocess, "run", side_effect=failure):
+            with self.assertRaisesRegex(RuntimeError, "Resource not accessible") as caught:
+                update.gh("pr", "create")
+        self.assertNotIn("private-test-token", str(caught.exception))
