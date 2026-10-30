@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- Open a configuration TUI when marinadoreview runs without arguments.
+- Configure provider profiles, primary/fallback routing and masked API credentials.
+- Load model lists, enter model IDs and test individual AI connections.
+- Show configuration status, the built-in review prompt and keyboard help.
+- Save config v1 atomically and preserve existing review JSON contracts.
+
 ## 0.1.1
 
 - Publish the version set in VERSION after a push to main.

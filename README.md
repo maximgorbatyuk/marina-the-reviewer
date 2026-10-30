@@ -20,6 +20,27 @@ bin/marinadoreview capabilities --json
 
 ## Configure providers
 
+Run without arguments in a terminal to open the configuration TUI:
+
+```sh
+marinadoreview
+marinadoreview --config ./config.local.json
+```
+
+The home screen shows the version, configuration path, and primary/fallback status. Open **Providers and routing** to create or edit profiles. Choose an AI provider preset (OpenAI, OpenRouter, DeepSeek, Groq, Ollama, or another OpenAI-compatible API), enter the API URL and authorization source, then load the model list or type a model ID. The model list depends on the server; manual entry remains available when listing is unsupported or unavailable.
+
+Paste an API token into its masked field, select an environment variable or private token file, or explicitly select no authorization for a suitable local server. A blank replacement preserves a saved token. Selecting an authorization source again clears its saved value; changing the API URL requires entering credentials again. Tokens and extra parameter values are hidden in the configuration viewer.
+
+**Test connection** sends one small AI request to the selected model using its JSON settings. It can use billed tokens, sends no source code, and does not retry or switch to fallback. A successful model-list request does not prove inference access. The status shows the last test time and duration; changes reset it, and a new session starts as untested. A small successful test does not guarantee a complete code review or support for every response schema. Offline configuration is supported without a successful test.
+
+Apply profile edits to the draft, then press `s` in Providers to save. Use `p` to assign the selected profile as primary, `f` for fallback, and `d` to disable fallback. Other profiles remain saved. Advanced settings expose JSON mode, token/context limits, timeout, retries, concurrency and streaming; existing extra parameters remain intact. Save validates the whole configuration and writes it atomically with private permissions. If the file changed externally, reload it before saving.
+
+The menu also provides configuration/status details, the full built-in review prompt, and help. Use arrows or `j`/`k` in menus, Tab/Shift+Tab in forms, Enter to select, and Esc to return or cancel a request. Prompt and help viewers support scrolling and Home/End. Terminal paste, including Cmd+V on macOS, is supported. `q` quits outside input fields; Ctrl+C cancels with exit code 130. Unsaved edits are not written automatically.
+
+The TUI requires terminal stdin and stdout. Without a terminal, an invocation without arguments returns exit code 2 with a stderr diagnostic and empty stdout. Use `--help` for text help or a subcommand for scripts. Existing JSON commands do not start the TUI. `--config PATH` or `MARINADOREVIEW_CONFIG` selects the same config v1 file used by review commands.
+
+To create an example configuration without the TUI:
+
 ```sh
 marinadoreview config init
 ```
