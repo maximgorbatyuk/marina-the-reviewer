@@ -19,6 +19,7 @@ permissions:
   contents: read
 concurrency:
   group: homebrew-marinadoreview
+  queue: max
   cancel-in-progress: false
 jobs:
   prepare:

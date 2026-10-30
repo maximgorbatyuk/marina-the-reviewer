@@ -1,14 +1,26 @@
 name: Release
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: marinadoreview-release
+  queue: max
+  cancel-in-progress: false
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
   release:
+    needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -16,20 +28,33 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: go.mod
-      - run: python3 scripts/release.py --check-tag "$GITHUB_REF_NAME"
-      - run: git merge-base --is-ancestor HEAD origin/dev
-      - run: make verify
+      - name: Check release configuration
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: check
+      - name: Create or reuse the VERSION tag
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 scripts/release.py --ci --publish
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
+        if: steps.version.outputs.build == 'true'
         with:
           distribution: goreleaser
           version: v2.19.0
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.tag }}
   homebrew:
     needs: release
     uses: ./.github/workflows/homebrew.yml
     with:
-      tag: ${{ github.ref_name }}
+      tag: ${{ needs.release.outputs.tag }}
     secrets:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

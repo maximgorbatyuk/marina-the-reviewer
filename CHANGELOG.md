@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Publish the version set in VERSION after a push to main.
+- Create immutable version tags after Linux and macOS checks.
+- Reuse complete releases on retries and update Homebrew automatically.
+
 ## 0.1.0
 
 - Prepare self-contained snapshots from pinned Git revisions.

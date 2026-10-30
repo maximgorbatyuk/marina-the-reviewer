@@ -3,6 +3,7 @@ on:
   push:
     branches: [dev, 'codex/**']
   pull_request:
+  workflow_call:
 permissions:
   contents: read
 jobs:

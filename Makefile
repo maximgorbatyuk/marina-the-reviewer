@@ -1,7 +1,7 @@
 .PHONY: build test verify snapshot
 
 build:
-	go build -trimpath -o bin/marinadoreview ./cmd/marinadoreview
+	go build -trimpath -ldflags "-X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version=$$(cat VERSION)-dev" -o bin/marinadoreview ./cmd/marinadoreview
 
 test:
 	go test ./...
