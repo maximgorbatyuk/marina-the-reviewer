@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Record local API token usage for reviews, retries, fallback and connection tests.
+- Show provider totals for rolling 7, 30 and 90 day windows with the usage command.
+- Export usage as JSON and show missing or incomplete provider counters.
+- Preserve reported usage from failed responses and Groq streaming metadata.
+
 ## 0.2.0
 
 - Open a configuration TUI when marinadoreview runs without arguments.

@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/creack/pty"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
 func TestTerminalProcess(t *testing.T) {
@@ -35,7 +36,13 @@ func TestTerminalProcess(t *testing.T) {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	recorder := usage.NewRecorder(filepath.Join(filepath.Dir(os.Getenv("MARINADOREVIEW_CONFIG")), "usage.jsonl"))
+	ctx = usage.WithRecorder(ctx, recorder)
 	code := RunContext(ctx, args, os.Stdin, os.Stdout, os.Stderr)
+	if err := recorder.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, "Test usage recording failed:", err)
+		os.Exit(98)
+	}
 	fmt.Fprintf(os.Stdout, "\nTEST-EXIT:%d\n", code)
 	// Keep the session leader alive until the parent checks the terminal mode.
 	// macOS can revoke the terminal when the session leader exits.
@@ -169,7 +176,7 @@ func TestTUIBareInvocationConfiguresAndTestsProfile(t *testing.T) {
 			return
 		}
 		probes.Add(1)
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}]}`)
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}`)
 	}))
 	defer server.Close()
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -199,6 +206,10 @@ func TestTUIBareInvocationConfiguresAndTestsProfile(t *testing.T) {
 	}
 	if models.Load() != 1 || probes.Load() != 1 {
 		t.Fatalf("models %d probes %d", models.Load(), probes.Load())
+	}
+	report, err := usage.Generate(usage.Store{Path: filepath.Join(filepath.Dir(path), "usage.jsonl")}, time.Now().UTC(), []int{7})
+	if err != nil || report.Periods[0].Total.Requests != 1 || report.Periods[0].Total.TotalTokens == nil || *report.Periods[0].Total.TotalTokens != 8 {
+		t.Fatal("TUI test usage not recorded or model discovery counted as tokens")
 	}
 }
 

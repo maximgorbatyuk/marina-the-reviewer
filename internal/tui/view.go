@@ -276,6 +276,8 @@ Review commands
   review    Prepare, plan and run a review
   validate  Validate model output against source
   compat    Import/export Marina-compatible JSON
+  usage     Show locally recorded tokens for 7, 30 and 90 days
+            usage --period 7d [--json] selects one window
   prompts show --builtin review
 
 Prompt override

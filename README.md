@@ -132,6 +132,25 @@ After bounded retries, network errors, timeouts, HTTP 429 and HTTP 5xx can switc
 
 Authentication errors, invalid requests, invalid model output, rejected findings and cancellation do not trigger fallback. Invalid output can receive one correction. Context overflow can split a batch with replan depth limited to three. Switching providers preserves those counters. Resume does not repeat a request with an uncertain outcome after interruption; inspect the journal and start a fresh run if another request is wanted.
 
+## Token usage
+
+```sh
+marinadoreview usage
+marinadoreview usage --period 7d
+marinadoreview usage --period 30d --json
+marinadoreview usage --period 90d
+```
+
+Without `--period`, the command shows all three rolling windows: 7, 30 and 90 days. Each report groups actual API attempts by their normalized endpoint, with names for known provider presets. Several profiles of one endpoint are combined; the JSON report includes their profile and model names. Windows use the UTC request start time.
+
+The counters sum API-reported input, output and total tokens. If total is absent but both input and output are present, their sum is used. Estimates made while preparing source or planning a review are not counted as spent tokens. Every retry, fallback, correction and TUI connection test is a separate attempt. Resuming a completed batch adds no usage. Model listing and offline commands do not add token usage.
+
+`UNKNOWN` counts attempts without usage, including unfinished requests; `PARTIAL` counts attempts with only some token fields. `?` means no counter was available. Numeric totals include only known values and can be incomplete when either category is nonzero. A failed or invalid model answer can still consume tokens and is counted when usage is supplied. Interrupted streams may lose their final usage event. OpenAI streaming requests ask for usage automatically unless explicit `stream_options` are configured; arbitrary compatible endpoints retain their request settings and may need `extraParameters.stream_options.include_usage` enabled. Groq streaming metadata is also supported.
+
+History is local to this machine and begins with this feature. Old review directories and other applications are not scanned, and provider account billing is not queried. The private journal is `os.UserConfigDir()/marina-the-reviewer/usage.jsonl`, independent of `--config`. `MARINADOREVIEW_USAGE_FILE` selects another file, including a persistent path in CI. Keep this file to retain history. New directories use `0700`, and the file uses `0600` with a writer lock. The journal contains request metadata and counts, without API keys, prompts, source code or model output.
+
+An unfinished last JSONL record is reported and repaired before the next append. Corrupt complete records cause an explicit report error. The journal has a 128 MiB limit; archive it and choose a fresh file before reaching that limit. A recording failure leaves the review running and emits a stderr warning after the command or TUI closes; its usage may be incomplete.
+
 ## Prompts and task context
 
 The built-in policy combines local code and architecture review:

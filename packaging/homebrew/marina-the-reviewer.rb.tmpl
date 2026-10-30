@@ -19,6 +19,8 @@ class MarinaTheReviewer < Formula
     assert_equal "marina-the-reviewer", identity.fetch("tool")
     assert_equal version.to_s, identity.fetch("version")
     assert_match "Run without arguments", shell_output("#{bin}/marinadoreview --help")
+    usage = JSON.parse(shell_output("#{bin}/marinadoreview usage --period 7d --json"))
+    assert_equal 7, usage.fetch("periods").first.fetch("days")
     assert_match "marina-the-reviewer", shell_output("#{bin}/marinadoreview capabilities --json")
     mkdir "repo" do
       system "git", "init", "--initial-branch=dev"

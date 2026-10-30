@@ -18,6 +18,9 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 }
 
 func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
+	if len(args) > 0 && args[0] == "usage" {
+		return usageCommand(args[1:], out, errOut)
+	}
 	if len(args) == 0 || args[0] == "--config" || strings.HasPrefix(args[0], "--config=") {
 		fs := flag.NewFlagSet("marinadoreview", flag.ContinueOnError)
 		fs.SetOutput(errOut)
@@ -43,7 +46,7 @@ func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io
 		return 0
 	}
 	if args[0] == "--help" || args[0] == "help" {
-		fmt.Fprintln(out, "marinadoreview — prepare, run and validate AI code reviews\n\nRun without arguments to open the configuration TUI (terminal required).\nUse --config PATH to open a selected configuration.\n\nCommands: prepare, plan, run, review, validate, compat, config, prompts, capabilities")
+		fmt.Fprintln(out, "marinadoreview — prepare, run and validate AI code reviews\n\nRun without arguments to open the configuration TUI (terminal required).\nUse --config PATH to open a selected configuration.\n\nCommands: prepare, plan, run, review, validate, compat, config, prompts, capabilities, usage")
 		return 0
 	}
 	if args[0] == "--version" || args[0] == "version" {

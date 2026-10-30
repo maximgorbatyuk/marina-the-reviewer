@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
 type ProbeResult struct {
@@ -18,6 +19,7 @@ func Probe(ctx context.Context, provider config.ProviderSnapshot, token string) 
 	started := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
+	ctx = usage.WithOperation(ctx, "connection-test")
 	budget := 1024
 	if n := provider.Profile.ContextLength; n > 0 {
 		budget = min(budget, n/4)
