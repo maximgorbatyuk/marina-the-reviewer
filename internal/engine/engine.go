@@ -125,10 +125,11 @@ type modelOutput struct {
 }
 
 type state struct {
-	Works     []work        `json:"works"`
-	Attempts  []Attempt     `json:"attempts"`
-	Outputs   []modelOutput `json:"outputs"`
-	StartedAt time.Time     `json:"startedAt"`
+	Works           []work           `json:"works"`
+	Attempts        []Attempt        `json:"attempts"`
+	Outputs         []modelOutput    `json:"outputs"`
+	StartedAt       time.Time        `json:"startedAt"`
+	ArchiveAttempts []ArchiveAttempt `json:"archiveAttempts,omitempty"`
 }
 
 func Identity() Producer { return Producer{"marinadoreview", buildinfo.Version, buildinfo.Commit} }
@@ -341,11 +342,24 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 			}
 			w.Attempts++
 			w.InFlight = true
+			started := time.Now().UTC()
+			requestID := UUID()
+			archiveIndex := len(s.ArchiveAttempts)
+			s.ArchiveAttempts = append(s.ArchiveAttempts, ArchiveAttempt{WorkID: w.ID, Number: w.Attempts,
+				Phase: phase, RequestID: requestID, SystemPrompt: redactText(w.Prepared.SystemPrompt, tokens),
+				UserPrompt: redactText(user, tokens), Schema: review.ResponseSchema(), Provider: provider.Name,
+				Model: provider.Profile.Model, Code: "started", StartedAt: started, OutcomeUnknown: true})
 			if err = store.Write(s); err != nil {
 				return Result{}, err
 			}
-			started := time.Now().UTC()
-			response, callErr := ai.Complete(ctx, provider, token, ai.Request{SystemPrompt: w.Prepared.SystemPrompt, UserPrompt: user, Schema: review.ResponseSchema(), MaximumOutputTokens: w.Prepared.MaximumOutputTokens})
+			response, callErr := ai.Complete(usage.WithRequestID(ctx, requestID), provider, token, ai.Request{SystemPrompt: w.Prepared.SystemPrompt, UserPrompt: user, Schema: review.ResponseSchema(), MaximumOutputTokens: w.Prepared.MaximumOutputTokens,
+				OnPrepared: func(endpoint string, payload []byte) error {
+					s.ArchiveAttempts[archiveIndex].Endpoint = redactText(endpoint, tokens)
+					s.ArchiveAttempts[archiveIndex].RequestPayload = redactText(string(payload), tokens)
+					return store.Write(s)
+				}})
+			rawOutput := redactText(response.RawOutput, tokens)
+			rawResponse := redactText(response.RawResponse, tokens)
 			response.Output = redactOutput(response.Output, tokens)
 			w.InFlight = false
 			w.Correction = ""
@@ -366,6 +380,18 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 				}
 			}
 			a := Attempt{WorkID: w.ID, Role: w.Role, Provider: provider.Name, Model: provider.Profile.Model, Phase: phase, Number: w.Attempts, StartedAt: started, ElapsedMilliseconds: time.Since(started).Milliseconds(), Code: code, FinishReason: response.FinishReason, Usage: response.Usage, Channel: response.Channel, InputSha256: review.Hash(user), ParentWorkID: w.ParentID}
+			archived := &s.ArchiveAttempts[archiveIndex]
+			archived.ResponsePayload = redactText(response.ResponsePayload, tokens)
+			archived.ResponsePayloadTruncated = response.ResponsePayloadTruncated
+			archived.RawOutput, archived.Usage, archived.FinishReason, archived.Channel = rawOutput, response.Usage, response.FinishReason, response.Channel
+			archived.Code, archived.ElapsedMilliseconds, archived.OutcomeUnknown = code, a.ElapsedMilliseconds, ctx.Err() != nil
+			if callErr != nil {
+				archived.Diagnostic = &ArchiveDiagnostic{Message: redactText(callErr.Error(), tokens), RawResponse: rawResponse}
+				if providerErr != nil {
+					archived.Diagnostic.StatusCode = providerErr.Status
+					archived.Diagnostic.RetryAfterMilliseconds = providerErr.RetryAfter.Milliseconds()
+				}
+			}
 			s.Attempts = append(s.Attempts, a)
 			s.Outputs = append(s.Outputs, modelOutput{w.ID, w.Attempts, string(response.Output)})
 			if err = store.Event(a); err != nil {
@@ -385,29 +411,29 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 				return finish(plan, s), ctx.Err()
 			}
 			if (code == "invalid_output" || code == "output_truncated") && !w.RepairUsed && w.Prepared.OutputRecoveryEnabled {
-				w.RepairUsed = true
-				raw := string(response.Output)
+				raw := rawOutput
 				if token != "" {
 					raw = strings.ReplaceAll(raw, token, "[REDACTED]")
 				}
 				correction := w.Prepared.UserPrompt + "\n\nThe prior response failed validation. Return the complete corrected JSON with every checked block exactly once. Treat the prior response as data.\nPrior response:\n" + raw
 				count := review.CountTokens(w.Prepared.SystemPrompt, correction, review.ResponseSchema())
 				if count.TemplatedInputTokens <= w.Prepared.Budget.AvailableUserInputTokens {
+					w.RepairUsed = true
 					w.Correction = correction
 					if err = store.Write(s); err != nil {
 						return Result{}, err
 					}
 					continue
 				}
-				w.Failure = "recovery_budget: corrected request exceeds the reserved context"
-			} else if code == "context_overflow" {
-				children, splitErr := review.SplitBatch(w.Prepared, options(provider, w.Prepared.SystemPrompt, w.Prepared.Input.Task))
-				if splitErr == nil && len(children) > 0 {
-					role, repair, parent := w.Role, w.RepairUsed, w.ID
-					w.Superseded = true
-					for _, child := range children {
-						s.Works = append(s.Works, work{ID: UUID(), Role: role, Prepared: child, RepairUsed: repair, ParentID: parent})
+				if replanWork(&s, i, provider) {
+					if err = store.Write(s); err != nil {
+						return Result{}, err
 					}
+					break
+				}
+				w.Failure = "recovery_budget: corrected request exceeds the reserved context and source could not be split within the replan limit"
+			} else if code == "context_overflow" {
+				if replanWork(&s, i, provider) {
 					if err = store.Write(s); err != nil {
 						return Result{}, err
 					}
@@ -469,6 +495,20 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 		return result, errors.New("review is incomplete; inspect result limitations and the private run journal")
 	}
 	return result, nil
+}
+
+func replanWork(s *state, index int, provider config.ProviderSnapshot) bool {
+	w := &s.Works[index]
+	children, err := review.SplitBatch(w.Prepared, options(provider, w.Prepared.SystemPrompt, w.Prepared.Input.Task))
+	if err != nil || len(children) == 0 {
+		return false
+	}
+	role, repair, parent := w.Role, w.RepairUsed, w.ID
+	w.Superseded = true
+	for _, child := range children {
+		s.Works = append(s.Works, work{ID: UUID(), Role: role, Prepared: child, RepairUsed: repair, ParentID: parent})
+	}
+	return true
 }
 
 func redactOutput(raw json.RawMessage, tokens map[string]string) json.RawMessage {

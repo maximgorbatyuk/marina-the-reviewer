@@ -2,14 +2,20 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/engine"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
 
 func TestGitToReviewAndResume(t *testing.T) {
@@ -35,6 +41,19 @@ func TestGitToReviewAndResume(t *testing.T) {
 	os.WriteFile(path, []byte("package main\nfunc main() { println(1) }\n"), 0600)
 	git("add", ".")
 	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "head")
+	resolve := func(ref string) string {
+		t.Helper()
+		data, err := exec.Command("git", "-C", repo, "rev-parse", ref).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(data))
+	}
+	baseSha, headSha := resolve("HEAD~1"), resolve("HEAD")
+	bare := filepath.Join(dir, "objects.git")
+	if data, err := exec.Command("git", "clone", "--bare", "--no-hardlinks", repo, bare).CombinedOutput(); err != nil {
+		t.Fatalf("bare source: %s %v", data, err)
+	}
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -90,15 +109,36 @@ func TestGitToReviewAndResume(t *testing.T) {
 	snapshot := filepath.Join(dir, "snapshot.json")
 	plan := filepath.Join(dir, "plan.json")
 	runDir := filepath.Join(dir, "run")
-	invoke("prepare", "--repo", repo, "--base", "HEAD~1", "--output", snapshot)
+	archivePath := filepath.Join(dir, "archive.json")
+	invoke("prepare", "--repo", bare, "--base-sha", baseSha, "--start-sha", baseSha, "--head-sha", headSha, "--output", snapshot)
 	invoke("plan", "--input", snapshot, "--config", conf, "--output", plan)
-	result := invoke("run", "--input", plan, "--config", conf, "--run-dir", runDir)
+	result := invoke("run", "--input", plan, "--config", conf, "--run-dir", runDir, "--archive-output", archivePath)
 	if result["status"] != "complete" {
 		t.Fatalf("result: %v", result)
 	}
 	invoke("run", "--input", plan, "--config", conf, "--run-dir", runDir)
 	if calls.Load() != 1 {
 		t.Fatalf("calls %d", calls.Load())
+	}
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive map[string]any
+	if err = json.Unmarshal(archiveBytes, &archive); err != nil || archive["kind"] != "ReviewExecutionArchive" || archive["runId"] != result["runId"] || archive["planFileSha256"] == "" {
+		t.Fatalf("execution archive: %v", err)
+	}
+	planBytes, err := os.ReadFile(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executionPlan, err := os.ReadFile(filepath.Join(runDir, "plan.json"))
+	if err != nil || !bytes.Equal(planBytes, executionPlan) {
+		t.Fatal("execution changed the saved plan bytes")
+	}
+	planDigest := sha256.Sum256(planBytes)
+	if archive["planFileSha256"] != hex.EncodeToString(planDigest[:]) {
+		t.Fatal("archive plan file hash differs from saved plan bytes")
 	}
 	marinaPlan := invoke("compat", "export", "--input", plan, "--format", "marina-v3")
 	if marinaPlan["version"] != float64(3) || marinaPlan["kind"] != nil {
@@ -109,6 +149,10 @@ func TestGitToReviewAndResume(t *testing.T) {
 		t.Fatal("batch export missing input identity")
 	}
 	t.Setenv("MTR_TEST_CLI_KEY", "")
+	recovered := invoke("archive", "--run-dir", runDir)
+	if recovered["planHash"] != archive["planHash"] || calls.Load() != 1 {
+		t.Fatal("offline archive changed the plan or executed inference")
+	}
 	var missingOut, missingErr bytes.Buffer
 	if code := Run([]string{"run", "--input", plan, "--config", conf, "--run-dir", filepath.Join(dir, "missing-credentials")}, &bytes.Buffer{}, &missingOut, &missingErr); code != 2 {
 		t.Fatalf("missing credentials exit %d: %s", code, missingErr.String())
@@ -116,6 +160,66 @@ func TestGitToReviewAndResume(t *testing.T) {
 	if calls.Load() != 1 || missingOut.Len() != 0 {
 		t.Fatal("missing credentials caused an inference or result output")
 	}
+	t.Run("aliased-run-state", func(t *testing.T) {
+		alias := filepath.Join(dir, "run-alias")
+		if err := os.Symlink(runDir, alias); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"plan.json", "state.json", "events.jsonl", "writer.lock"} {
+			path := filepath.Join(runDir, name)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out, diagnostic bytes.Buffer
+			if code := Run([]string{"archive", "--run-dir", runDir, "--output", filepath.Join(alias, name)}, &bytes.Buffer{}, &out, &diagnostic); code != 2 || out.Len() != 0 {
+				t.Fatalf("aliased %s was not rejected: exit %d %s", name, code, diagnostic.String())
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("rejected output changed %s", name)
+			}
+		}
+	})
+	t.Run("large-offline-archive", func(t *testing.T) {
+		store, err := runstore.Open(runDir, archive["planHash"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		var saved map[string]json.RawMessage
+		if err = store.Read(&saved); err != nil {
+			t.Fatal(err)
+		}
+		var attempts []engine.ArchiveAttempt
+		if err = json.Unmarshal(saved["archiveAttempts"], &attempts); err != nil || len(attempts) != 1 {
+			t.Fatalf("saved archive attempts: %v", err)
+		}
+		attempts[0].RawOutput = strings.Repeat("x", 65<<20)
+		if saved["archiveAttempts"], err = json.Marshal(attempts); err != nil {
+			t.Fatal(err)
+		}
+		if err = store.Write(saved); err != nil {
+			t.Fatal(err)
+		}
+		store.Close()
+		var out, diagnostic bytes.Buffer
+		if code := Run([]string{"archive", "--run-dir", runDir, "--output", archivePath}, &bytes.Buffer{}, &out, &diagnostic); code != 0 {
+			t.Fatalf("large offline archive exit %d: %s", code, diagnostic.String())
+		}
+		data, err := runstore.ReadPrivate(archivePath, runstore.MaximumExecutionDocumentBytes)
+		if err != nil || len(data) <= runstore.MaximumDocumentBytes {
+			t.Fatalf("execution archive did not use its separate bound: %v", err)
+		}
+		var recovered struct {
+			Attempts []struct {
+				RawOutput string `json:"rawOutput"`
+			} `json:"attempts"`
+		}
+		if err = json.Unmarshal(data, &recovered); err != nil || len(recovered.Attempts) != 1 || len(recovered.Attempts[0].RawOutput) != 65<<20 || calls.Load() != 1 || out.Len() != 0 {
+			t.Fatalf("large offline archive changed its output or executed inference: %v", err)
+		}
+	})
 }
 
 func TestRunRejectsProviderOverrides(t *testing.T) {

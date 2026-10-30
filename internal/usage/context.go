@@ -16,6 +16,7 @@ const (
 	recorderKey contextKey = iota
 	operationKey
 	reviewKey
+	requestKey
 )
 
 type Recorder struct {
@@ -39,6 +40,10 @@ type reviewIdentity struct{ runID, passID string }
 
 func WithReview(ctx context.Context, runID, passID string) context.Context {
 	return context.WithValue(ctx, reviewKey, reviewIdentity{runID, passID})
+}
+
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestKey, requestID)
 }
 
 func (r *Recorder) store() (Store, error) {
@@ -97,18 +102,22 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string) {
 		r.pending.Done()
 		return func(Counts, string) {}
 	}
-	var bytes [16]byte
-	if _, err := rand.Read(bytes[:]); err != nil {
-		r.remember(errors.New("cannot create usage request identity"))
-		r.pending.Done()
-		return func(Counts, string) {}
+	requestID, _ := ctx.Value(requestKey).(string)
+	if requestID == "" {
+		var bytes [16]byte
+		if _, err := rand.Read(bytes[:]); err != nil {
+			r.remember(errors.New("cannot create usage request identity"))
+			r.pending.Done()
+			return func(Counts, string) {}
+		}
+		requestID = hex.EncodeToString(bytes[:])
 	}
 	operation, _ := ctx.Value(operationKey).(string)
 	if operation == "" {
 		operation = "ai"
 	}
 	now := time.Now().UTC()
-	e := Event{Version: 1, ID: hex.EncodeToString(bytes[:]), Kind: "start", At: now, StartedAt: now, ProviderID: meta.ProviderID, Provider: meta.Provider, Profile: meta.Profile, Model: meta.Model, Operation: operation}
+	e := Event{Version: 1, ID: requestID, Kind: "start", At: now, StartedAt: now, ProviderID: meta.ProviderID, Provider: meta.Provider, Profile: meta.Profile, Model: meta.Model, Operation: operation}
 	if review, ok := ctx.Value(reviewKey).(reviewIdentity); ok {
 		e.RunID, e.PassID = review.runID, review.passID
 	}

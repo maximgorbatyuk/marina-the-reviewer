@@ -163,6 +163,35 @@ func declarationStart(tokens []javaToken, i int) int {
 	}
 	return i
 }
+
+func declarationTokens(tokens []javaToken) []javaToken {
+	declarations := make([]javaToken, 0, len(tokens))
+	for index := 0; index < len(tokens); index++ {
+		token := tokens[index]
+		if token.text != "@" || index+1 >= len(tokens) || tokens[index+1].text == "interface" || !javaIdentifier(tokens[index+1].text) {
+			declarations = append(declarations, token)
+			continue
+		}
+		end := index + 2
+		for end+1 < len(tokens) && tokens[end].text == "." && javaIdentifier(tokens[end+1].text) {
+			end += 2
+		}
+		if end < len(tokens) && tokens[end].text == "(" {
+			closing := matching(tokens, end, "(", ")")
+			if closing < 0 {
+				declarations = append(declarations, token)
+				continue
+			}
+			end = closing + 1
+		}
+		// Keep the source span so declaration slices retain annotations without reading their arguments as members.
+		token.text, token.end = "", tokens[end-1].end
+		declarations = append(declarations, token)
+		index = end - 1
+	}
+	return declarations
+}
+
 func sourceSlice(s SourceSnapshot, first, last int, complete bool) CodeSlice {
 	ls := lines(s.Content)
 	first = max(first, 1)
@@ -172,7 +201,7 @@ func sourceSlice(s SourceSnapshot, first, last int, complete bool) CodeSlice {
 func readJava(s SourceSnapshot) ([]javaSymbol, []javaUnit, []string) {
 	content := strings.ReplaceAll(s.Content, "\r\n", "\n")
 	masked := sanitizeJava(content)
-	tokens := javaTokens(masked)
+	tokens := declarationTokens(javaTokens(masked))
 	symbols := []javaSymbol{}
 	units := []javaUnit{}
 	limitations := []string{}

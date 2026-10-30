@@ -1,0 +1,2454 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "diagnostic": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "rawResponse": {
+                    "type": "string"
+                  },
+                  "retryAfterMilliseconds": {
+                    "type": "integer"
+                  },
+                  "statusCode": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "elapsedMilliseconds": {
+            "type": "integer"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "finishReason": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer"
+          },
+          "outcomeUnknown": {
+            "type": "boolean"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "rawOutput": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "requestPayload": {
+            "type": "string"
+          },
+          "responsePayload": {
+            "type": "string"
+          },
+          "responsePayloadTruncated": {
+            "type": "boolean"
+          },
+          "schema": {},
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "inputTokens": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "outputTokens": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "totalTokens": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "inputTokens",
+              "outputTokens",
+              "totalTokens"
+            ],
+            "type": "object"
+          },
+          "userPrompt": {
+            "type": "string"
+          },
+          "workId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workId",
+          "number",
+          "phase",
+          "requestId",
+          "systemPrompt",
+          "userPrompt",
+          "endpoint",
+          "requestPayload",
+          "responsePayload",
+          "responsePayloadTruncated",
+          "schema",
+          "rawOutput",
+          "provider",
+          "model",
+          "usage",
+          "finishReason",
+          "channel",
+          "code",
+          "diagnostic",
+          "startedAt",
+          "elapsedMilliseconds",
+          "outcomeUnknown"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "baseSha": {
+      "type": "string"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "baselineCommit": {
+          "type": "string"
+        },
+        "protocolSha256": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "responseSchemaSha256": {
+          "type": "string"
+        },
+        "validationPolicyVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "baselineCommit",
+        "protocolVersion",
+        "validationPolicyVersion",
+        "responseSchemaSha256",
+        "protocolSha256"
+      ],
+      "type": "object"
+    },
+    "headSha": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "passId": {
+      "type": "string"
+    },
+    "planFileSha256": {
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "elapsedMilliseconds": {
+                "type": "integer"
+              },
+              "finishReason": {
+                "type": "string"
+              },
+              "inputSha256": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "parentWorkId": {
+                "type": "string"
+              },
+              "phase": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "startedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "usage": {
+                "additionalProperties": false,
+                "properties": {
+                  "inputTokens": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "outputTokens": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "totalTokens": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "inputTokens",
+                  "outputTokens",
+                  "totalTokens"
+                ],
+                "type": "object"
+              },
+              "workId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "workId",
+              "role",
+              "provider",
+              "model",
+              "phase",
+              "number",
+              "startedAt",
+              "elapsedMilliseconds",
+              "code",
+              "usage",
+              "inputSha256"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "compatibility": {
+          "additionalProperties": false,
+          "properties": {
+            "baselineCommit": {
+              "type": "string"
+            },
+            "protocolSha256": {
+              "type": "string"
+            },
+            "protocolVersion": {
+              "type": "integer"
+            },
+            "responseSchemaSha256": {
+              "type": "string"
+            },
+            "validationPolicyVersion": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "baselineCommit",
+            "protocolVersion",
+            "validationPolicyVersion",
+            "responseSchemaSha256",
+            "protocolSha256"
+          ],
+          "type": "object"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "passId": {
+          "type": "string"
+        },
+        "producer": {
+          "additionalProperties": false,
+          "properties": {
+            "commit": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "version",
+            "commit"
+          ],
+          "type": "object"
+        },
+        "result": {
+          "additionalProperties": false,
+          "properties": {
+            "candidates": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "filePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fingerprint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "itemIndex": {
+                    "type": "integer"
+                  },
+                  "output": {},
+                  "reason": {
+                    "type": "string"
+                  },
+                  "reasonCode": {
+                    "type": "string"
+                  },
+                  "resultKind": {
+                    "type": "string"
+                  },
+                  "reviewClusterId": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reviewClusterId",
+                  "resultKind",
+                  "itemIndex",
+                  "output",
+                  "filePath",
+                  "fingerprint",
+                  "state"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "checkedBlockIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "claims": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "endLine": {
+                    "type": "integer"
+                  },
+                  "filePath": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": "string"
+                  },
+                  "invariantId": {
+                    "type": "string"
+                  },
+                  "isStrength": {
+                    "type": "boolean"
+                  },
+                  "startLine": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "fingerprint",
+                  "invariantId",
+                  "filePath",
+                  "startLine",
+                  "endLine",
+                  "isStrength"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "dependencyRejections": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "callLine": {
+                    "type": "integer"
+                  },
+                  "edgeId": {
+                    "type": "string"
+                  },
+                  "evidenceBlockId": {
+                    "type": "string"
+                  },
+                  "itemIndex": {
+                    "type": "integer"
+                  },
+                  "resultKind": {
+                    "type": "string"
+                  },
+                  "reviewClusterId": {
+                    "type": "string"
+                  },
+                  "symbolId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reviewClusterId",
+                  "resultKind",
+                  "itemIndex",
+                  "evidenceBlockId",
+                  "edgeId",
+                  "symbolId",
+                  "callLine"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "duplicateRejections": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "rejectedFingerprint": {
+                    "type": "string"
+                  },
+                  "retainedFingerprint": {
+                    "type": "string"
+                  },
+                  "sharedBaseAnchors": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filePath": {
+                          "type": "string"
+                        },
+                        "isPrimary": {
+                          "type": "boolean"
+                        },
+                        "line": {
+                          "type": "integer"
+                        },
+                        "revision": {
+                          "type": "string"
+                        },
+                        "revisionSha": {
+                          "type": "string"
+                        },
+                        "sourceSha256": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "filePath",
+                        "revision",
+                        "revisionSha",
+                        "line",
+                        "sourceSha256",
+                        "isPrimary"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "rejectedFingerprint",
+                  "retainedFingerprint",
+                  "reason",
+                  "sharedBaseAnchors"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "evidenceCorrections": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "actualEndLine": {
+                    "type": "integer"
+                  },
+                  "actualStartLine": {
+                    "type": "integer"
+                  },
+                  "blockId": {
+                    "type": "string"
+                  },
+                  "canonicalQuoteSha256": {
+                    "type": "string"
+                  },
+                  "correctionKind": {
+                    "type": "string"
+                  },
+                  "declaredEndLine": {
+                    "type": "integer"
+                  },
+                  "declaredStartLine": {
+                    "type": "integer"
+                  },
+                  "itemIndex": {
+                    "type": "integer"
+                  },
+                  "quoteSha256": {
+                    "type": "string"
+                  },
+                  "resultKind": {
+                    "type": "string"
+                  },
+                  "reviewClusterId": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reviewClusterId",
+                  "resultKind",
+                  "itemIndex",
+                  "blockId",
+                  "revision",
+                  "declaredStartLine",
+                  "declaredEndLine",
+                  "actualStartLine",
+                  "actualEndLine",
+                  "quoteSha256",
+                  "canonicalQuoteSha256",
+                  "correctionKind"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "findingWitnesses": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "anchors": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filePath": {
+                          "type": "string"
+                        },
+                        "isPrimary": {
+                          "type": "boolean"
+                        },
+                        "line": {
+                          "type": "integer"
+                        },
+                        "revision": {
+                          "type": "string"
+                        },
+                        "revisionSha": {
+                          "type": "string"
+                        },
+                        "sourceSha256": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "filePath",
+                        "revision",
+                        "revisionSha",
+                        "line",
+                        "sourceSha256",
+                        "isPrimary"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "baseSha": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": "string"
+                  },
+                  "hasPairedPrimaryEvidence": {
+                    "type": "boolean"
+                  },
+                  "headSha": {
+                    "type": "string"
+                  },
+                  "invariantId": {
+                    "type": "string"
+                  },
+                  "isNewHelperOnly": {
+                    "type": "boolean"
+                  },
+                  "ruleId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "fingerprint",
+                  "ruleId",
+                  "invariantId",
+                  "hasPairedPrimaryEvidence",
+                  "isNewHelperOnly",
+                  "anchors",
+                  "baseSha",
+                  "headSha"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "confidence": {
+                    "type": "number"
+                  },
+                  "evidence": {
+                    "type": "string"
+                  },
+                  "filePath": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inlinePosition": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "newLine": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "newPath": {
+                            "type": "string"
+                          },
+                          "oldLine": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "oldPath": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "oldPath",
+                          "newPath",
+                          "oldLine",
+                          "newLine"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "inlineSuppressionReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "newLine": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "oldLine": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "purpose": {
+                    "type": "integer"
+                  },
+                  "reviewChunkId": {
+                    "type": "string"
+                  },
+                  "reviewPassId": {
+                    "type": "string"
+                  },
+                  "reviewRunId": {
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "type": "integer"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reviewRunId",
+                  "reviewPassId",
+                  "reviewChunkId",
+                  "purpose",
+                  "ruleId",
+                  "filePath",
+                  "oldLine",
+                  "newLine",
+                  "severity",
+                  "title",
+                  "message",
+                  "evidence",
+                  "confidence",
+                  "fingerprint",
+                  "inlinePosition",
+                  "inlineSuppressionReason"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "isComplete": {
+              "type": "boolean"
+            },
+            "limitations": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "modelOutputSha256": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rejectedItemCount": {
+              "type": "integer"
+            },
+            "strengths": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "confidence": {
+                    "type": "number"
+                  },
+                  "evidence": {
+                    "type": "string"
+                  },
+                  "filePath": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "newLine": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "oldLine": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "purpose": {
+                    "type": "integer"
+                  },
+                  "reviewChunkId": {
+                    "type": "string"
+                  },
+                  "reviewPassId": {
+                    "type": "string"
+                  },
+                  "reviewRunId": {
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reviewRunId",
+                  "reviewPassId",
+                  "reviewChunkId",
+                  "purpose",
+                  "ruleId",
+                  "filePath",
+                  "oldLine",
+                  "newLine",
+                  "title",
+                  "message",
+                  "evidence",
+                  "confidence",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "unconfirmedDependencies": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "validationPolicyVersion": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "findings",
+            "strengths",
+            "limitations",
+            "isComplete",
+            "checkedBlockIds",
+            "unconfirmedDependencies",
+            "rejectedItemCount",
+            "validationPolicyVersion",
+            "modelOutputSha256",
+            "candidates",
+            "claims",
+            "evidenceCorrections",
+            "dependencyRejections",
+            "findingWitnesses",
+            "duplicateRejections"
+          ],
+          "type": "object"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "producer",
+        "compatibility",
+        "runId",
+        "passId",
+        "status",
+        "result",
+        "attempts"
+      ],
+      "type": "object"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "startSha": {
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "works": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "failure": {
+            "type": "string"
+          },
+          "inFlight": {
+            "type": "boolean"
+          },
+          "parentWorkId": {
+            "type": "string"
+          },
+          "prepared": {
+            "additionalProperties": false,
+            "properties": {
+              "budget": {
+                "additionalProperties": false,
+                "properties": {
+                  "availableUserInputTokens": {
+                    "type": "integer"
+                  },
+                  "contextLength": {
+                    "type": "integer"
+                  },
+                  "estimatedSchemaTokens": {
+                    "type": "integer"
+                  },
+                  "estimatedSystemTokens": {
+                    "type": "integer"
+                  },
+                  "fixedOverheadTokens": {
+                    "type": "integer"
+                  },
+                  "reservedOutputTokens": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "contextLength",
+                  "reservedOutputTokens",
+                  "estimatedSystemTokens",
+                  "estimatedSchemaTokens",
+                  "fixedOverheadTokens",
+                  "availableUserInputTokens"
+                ],
+                "type": "object"
+              },
+              "estimatedInputTokens": {
+                "type": "integer"
+              },
+              "estimationMethod": {
+                "type": "string"
+              },
+              "input": {
+                "additionalProperties": false,
+                "properties": {
+                  "baseSha": {
+                    "type": "string"
+                  },
+                  "batch": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "blocks": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "base": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "content": {
+                                      "type": "string"
+                                    },
+                                    "endLine": {
+                                      "type": "integer"
+                                    },
+                                    "isComplete": {
+                                      "type": "boolean"
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "revision": {
+                                      "type": "integer"
+                                    },
+                                    "startLine": {
+                                      "type": "integer"
+                                    },
+                                    "symbolEndLine": {
+                                      "type": "integer"
+                                    },
+                                    "symbolStartLine": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "path",
+                                    "revision",
+                                    "startLine",
+                                    "endLine",
+                                    "content",
+                                    "symbolStartLine",
+                                    "symbolEndLine",
+                                    "isComplete"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "baseExists": {
+                              "type": "boolean"
+                            },
+                            "changedLines": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "line": {
+                                    "type": "integer"
+                                  },
+                                  "revision": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "revision",
+                                  "line"
+                                ],
+                                "type": "object"
+                              },
+                              "type": [
+                                "array",
+                                "null"
+                              ]
+                            },
+                            "filePath": {
+                              "type": "string"
+                            },
+                            "head": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "content": {
+                                      "type": "string"
+                                    },
+                                    "endLine": {
+                                      "type": "integer"
+                                    },
+                                    "isComplete": {
+                                      "type": "boolean"
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "revision": {
+                                      "type": "integer"
+                                    },
+                                    "startLine": {
+                                      "type": "integer"
+                                    },
+                                    "symbolEndLine": {
+                                      "type": "integer"
+                                    },
+                                    "symbolStartLine": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "path",
+                                    "revision",
+                                    "startLine",
+                                    "endLine",
+                                    "content",
+                                    "symbolStartLine",
+                                    "symbolEndLine",
+                                    "isComplete"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "headExists": {
+                              "type": "boolean"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string"
+                            },
+                            "limitations": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": [
+                                "array",
+                                "null"
+                              ]
+                            },
+                            "originalBlockId": {
+                              "type": "string"
+                            },
+                            "partCount": {
+                              "type": "integer"
+                            },
+                            "partIndex": {
+                              "type": "integer"
+                            },
+                            "structuralContext": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "endLine": {
+                                    "type": "integer"
+                                  },
+                                  "isComplete": {
+                                    "type": "boolean"
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  },
+                                  "revision": {
+                                    "type": "integer"
+                                  },
+                                  "startLine": {
+                                    "type": "integer"
+                                  },
+                                  "symbolEndLine": {
+                                    "type": "integer"
+                                  },
+                                  "symbolStartLine": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "path",
+                                  "revision",
+                                  "startLine",
+                                  "endLine",
+                                  "content",
+                                  "symbolStartLine",
+                                  "symbolEndLine",
+                                  "isComplete"
+                                ],
+                                "type": "object"
+                              },
+                              "type": [
+                                "array",
+                                "null"
+                              ]
+                            },
+                            "symbolIds": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": [
+                                "array",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "filePath",
+                            "kind",
+                            "symbolIds",
+                            "base",
+                            "head",
+                            "changedLines",
+                            "originalBlockId",
+                            "baseExists",
+                            "headExists",
+                            "partIndex",
+                            "partCount",
+                            "limitations",
+                            "structuralContext"
+                          ],
+                          "type": "object"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "count": {
+                        "type": "integer"
+                      },
+                      "fileParts": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "count": {
+                              "type": "integer"
+                            },
+                            "index": {
+                              "type": "integer"
+                            },
+                            "path": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "index",
+                            "count"
+                          ],
+                          "type": "object"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "graphSha256": {
+                        "type": "string"
+                      },
+                      "index": {
+                        "type": "integer"
+                      },
+                      "isWholeReview": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "index",
+                      "count",
+                      "blocks",
+                      "graphSha256",
+                      "fileParts",
+                      "isWholeReview"
+                    ],
+                    "type": "object"
+                  },
+                  "graph": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "edges": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "change": {
+                              "type": "string"
+                            },
+                            "confidence": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "invokedName": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "kind": {
+                              "type": "string"
+                            },
+                            "line": {
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reasons": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": [
+                                "array",
+                                "null"
+                              ]
+                            },
+                            "receiverType": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "resolution": {
+                              "type": "integer"
+                            },
+                            "revision": {
+                              "type": "integer"
+                            },
+                            "sourceId": {
+                              "type": "string"
+                            },
+                            "targetIds": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": [
+                                "array",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "sourceId",
+                            "targetIds",
+                            "revision",
+                            "line",
+                            "invokedName",
+                            "receiverType",
+                            "resolution",
+                            "change",
+                            "confidence",
+                            "reasons"
+                          ],
+                          "type": "object"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "limitations": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "nodes": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "change": {
+                              "type": "integer"
+                            },
+                            "counterpartAbsent": {
+                              "type": "boolean"
+                            },
+                            "counterpartId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "declaringType": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "endLine": {
+                              "type": "integer"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "integer"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer"
+                            },
+                            "signature": {
+                              "type": "string"
+                            },
+                            "sourceSymbolId": {
+                              "type": "string"
+                            },
+                            "startLine": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "sourceSymbolId",
+                            "path",
+                            "declaringType",
+                            "name",
+                            "signature",
+                            "kind",
+                            "revision",
+                            "change",
+                            "startLine",
+                            "endLine",
+                            "counterpartId",
+                            "counterpartAbsent"
+                          ],
+                          "type": "object"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "sha256": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "nodes",
+                      "edges",
+                      "limitations",
+                      "sha256"
+                    ],
+                    "type": "object"
+                  },
+                  "headSha": {
+                    "type": "string"
+                  },
+                  "limitations": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "manifestSha256": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "integer"
+                  },
+                  "startSha": {
+                    "type": "string"
+                  },
+                  "task": {},
+                  "version": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "version",
+                  "purpose",
+                  "baseSha",
+                  "startSha",
+                  "headSha",
+                  "manifestSha256",
+                  "graph",
+                  "batch",
+                  "limitations",
+                  "task"
+                ],
+                "type": "object"
+              },
+              "inputSha256": {
+                "type": "string"
+              },
+              "maximumOutputTokens": {
+                "type": "integer"
+              },
+              "outputRecoveryEnabled": {
+                "type": "boolean"
+              },
+              "parentTaskId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "replanDepth": {
+                "type": "integer"
+              },
+              "systemPrompt": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "tokenCount": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "isExact": {
+                        "type": "boolean"
+                      },
+                      "limitation": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "schemaReserveTokens": {
+                        "type": "integer"
+                      },
+                      "schemaTokenizationMethod": {
+                        "type": "string"
+                      },
+                      "templatedInputTokens": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "templatedInputTokens",
+                      "schemaReserveTokens",
+                      "method",
+                      "isExact",
+                      "limitation",
+                      "schemaTokenizationMethod"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "userPrompt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "input",
+              "title",
+              "systemPrompt",
+              "userPrompt",
+              "budget",
+              "estimatedInputTokens",
+              "estimationMethod",
+              "inputSha256",
+              "outputRecoveryEnabled",
+              "maximumOutputTokens",
+              "tokenCount",
+              "parentTaskId",
+              "replanDepth"
+            ],
+            "type": "object"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "candidates": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "filePath": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "fingerprint": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "itemIndex": {
+                          "type": "integer"
+                        },
+                        "output": {},
+                        "reason": {
+                          "type": "string"
+                        },
+                        "reasonCode": {
+                          "type": "string"
+                        },
+                        "resultKind": {
+                          "type": "string"
+                        },
+                        "reviewClusterId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "reviewClusterId",
+                        "resultKind",
+                        "itemIndex",
+                        "output",
+                        "filePath",
+                        "fingerprint",
+                        "state"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "checkedBlockIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "claims": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "endLine": {
+                          "type": "integer"
+                        },
+                        "filePath": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string"
+                        },
+                        "invariantId": {
+                          "type": "string"
+                        },
+                        "isStrength": {
+                          "type": "boolean"
+                        },
+                        "startLine": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "fingerprint",
+                        "invariantId",
+                        "filePath",
+                        "startLine",
+                        "endLine",
+                        "isStrength"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "dependencyRejections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "callLine": {
+                          "type": "integer"
+                        },
+                        "edgeId": {
+                          "type": "string"
+                        },
+                        "evidenceBlockId": {
+                          "type": "string"
+                        },
+                        "itemIndex": {
+                          "type": "integer"
+                        },
+                        "resultKind": {
+                          "type": "string"
+                        },
+                        "reviewClusterId": {
+                          "type": "string"
+                        },
+                        "symbolId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "reviewClusterId",
+                        "resultKind",
+                        "itemIndex",
+                        "evidenceBlockId",
+                        "edgeId",
+                        "symbolId",
+                        "callLine"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "duplicateRejections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "reason": {
+                          "type": "string"
+                        },
+                        "rejectedFingerprint": {
+                          "type": "string"
+                        },
+                        "retainedFingerprint": {
+                          "type": "string"
+                        },
+                        "sharedBaseAnchors": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "filePath": {
+                                "type": "string"
+                              },
+                              "isPrimary": {
+                                "type": "boolean"
+                              },
+                              "line": {
+                                "type": "integer"
+                              },
+                              "revision": {
+                                "type": "string"
+                              },
+                              "revisionSha": {
+                                "type": "string"
+                              },
+                              "sourceSha256": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "filePath",
+                              "revision",
+                              "revisionSha",
+                              "line",
+                              "sourceSha256",
+                              "isPrimary"
+                            ],
+                            "type": "object"
+                          },
+                          "type": [
+                            "array",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "rejectedFingerprint",
+                        "retainedFingerprint",
+                        "reason",
+                        "sharedBaseAnchors"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "evidenceCorrections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "actualEndLine": {
+                          "type": "integer"
+                        },
+                        "actualStartLine": {
+                          "type": "integer"
+                        },
+                        "blockId": {
+                          "type": "string"
+                        },
+                        "canonicalQuoteSha256": {
+                          "type": "string"
+                        },
+                        "correctionKind": {
+                          "type": "string"
+                        },
+                        "declaredEndLine": {
+                          "type": "integer"
+                        },
+                        "declaredStartLine": {
+                          "type": "integer"
+                        },
+                        "itemIndex": {
+                          "type": "integer"
+                        },
+                        "quoteSha256": {
+                          "type": "string"
+                        },
+                        "resultKind": {
+                          "type": "string"
+                        },
+                        "reviewClusterId": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "reviewClusterId",
+                        "resultKind",
+                        "itemIndex",
+                        "blockId",
+                        "revision",
+                        "declaredStartLine",
+                        "declaredEndLine",
+                        "actualStartLine",
+                        "actualEndLine",
+                        "quoteSha256",
+                        "canonicalQuoteSha256",
+                        "correctionKind"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "findingWitnesses": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "anchors": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "filePath": {
+                                "type": "string"
+                              },
+                              "isPrimary": {
+                                "type": "boolean"
+                              },
+                              "line": {
+                                "type": "integer"
+                              },
+                              "revision": {
+                                "type": "string"
+                              },
+                              "revisionSha": {
+                                "type": "string"
+                              },
+                              "sourceSha256": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "filePath",
+                              "revision",
+                              "revisionSha",
+                              "line",
+                              "sourceSha256",
+                              "isPrimary"
+                            ],
+                            "type": "object"
+                          },
+                          "type": [
+                            "array",
+                            "null"
+                          ]
+                        },
+                        "baseSha": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string"
+                        },
+                        "hasPairedPrimaryEvidence": {
+                          "type": "boolean"
+                        },
+                        "headSha": {
+                          "type": "string"
+                        },
+                        "invariantId": {
+                          "type": "string"
+                        },
+                        "isNewHelperOnly": {
+                          "type": "boolean"
+                        },
+                        "ruleId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "fingerprint",
+                        "ruleId",
+                        "invariantId",
+                        "hasPairedPrimaryEvidence",
+                        "isNewHelperOnly",
+                        "anchors",
+                        "baseSha",
+                        "headSha"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "findings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "confidence": {
+                          "type": "number"
+                        },
+                        "evidence": {
+                          "type": "string"
+                        },
+                        "filePath": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "inlinePosition": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "newLine": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "newPath": {
+                                  "type": "string"
+                                },
+                                "oldLine": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "oldPath": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "oldPath",
+                                "newPath",
+                                "oldLine",
+                                "newLine"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "inlineSuppressionReason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "newLine": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "oldLine": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "purpose": {
+                          "type": "integer"
+                        },
+                        "reviewChunkId": {
+                          "type": "string"
+                        },
+                        "reviewPassId": {
+                          "type": "string"
+                        },
+                        "reviewRunId": {
+                          "type": "string"
+                        },
+                        "ruleId": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "reviewRunId",
+                        "reviewPassId",
+                        "reviewChunkId",
+                        "purpose",
+                        "ruleId",
+                        "filePath",
+                        "oldLine",
+                        "newLine",
+                        "severity",
+                        "title",
+                        "message",
+                        "evidence",
+                        "confidence",
+                        "fingerprint",
+                        "inlinePosition",
+                        "inlineSuppressionReason"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "isComplete": {
+                    "type": "boolean"
+                  },
+                  "limitations": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "modelOutputSha256": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rejectedItemCount": {
+                    "type": "integer"
+                  },
+                  "strengths": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "confidence": {
+                          "type": "number"
+                        },
+                        "evidence": {
+                          "type": "string"
+                        },
+                        "filePath": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "newLine": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "oldLine": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "purpose": {
+                          "type": "integer"
+                        },
+                        "reviewChunkId": {
+                          "type": "string"
+                        },
+                        "reviewPassId": {
+                          "type": "string"
+                        },
+                        "reviewRunId": {
+                          "type": "string"
+                        },
+                        "ruleId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "reviewRunId",
+                        "reviewPassId",
+                        "reviewChunkId",
+                        "purpose",
+                        "ruleId",
+                        "filePath",
+                        "oldLine",
+                        "newLine",
+                        "title",
+                        "message",
+                        "evidence",
+                        "confidence",
+                        "fingerprint"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "unconfirmedDependencies": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "validationPolicyVersion": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "findings",
+                  "strengths",
+                  "limitations",
+                  "isComplete",
+                  "checkedBlockIds",
+                  "unconfirmedDependencies",
+                  "rejectedItemCount",
+                  "validationPolicyVersion",
+                  "modelOutputSha256",
+                  "candidates",
+                  "claims",
+                  "evidenceCorrections",
+                  "dependencyRejections",
+                  "findingWitnesses",
+                  "duplicateRejections"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "superseded": {
+            "type": "boolean"
+          },
+          "workId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workId",
+          "parentWorkId",
+          "role",
+          "prepared",
+          "result",
+          "failure",
+          "superseded",
+          "inFlight"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "producer",
+    "compatibility",
+    "runId",
+    "passId",
+    "planHash",
+    "planFileSha256",
+    "baseSha",
+    "startSha",
+    "headSha",
+    "status",
+    "startedAt",
+    "result",
+    "works",
+    "attempts"
+  ],
+  "title": "review-execution-archive",
+  "type": "object"
+}

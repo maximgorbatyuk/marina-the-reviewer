@@ -64,7 +64,7 @@ func shape(t reflect.Type) map[string]any {
 }
 
 func main() {
-	types := map[string]reflect.Type{"review-document": reflect.TypeFor[engine.Document](), "review-snapshot": reflect.TypeFor[engine.Snapshot](), "review-plan": reflect.TypeFor[engine.Plan](), "review-result": reflect.TypeFor[engine.Result](), "config": reflect.TypeFor[config.Config](), "marina-prepared-batch-v3": reflect.TypeFor[review.PreparedBatch](), "marina-batch-result-v3": reflect.TypeFor[review.BatchResult]()}
+	types := map[string]reflect.Type{"review-execution-archive": reflect.TypeFor[engine.ExecutionArchive](), "review-document": reflect.TypeFor[engine.Document](), "review-snapshot": reflect.TypeFor[engine.Snapshot](), "review-plan": reflect.TypeFor[engine.Plan](), "review-result": reflect.TypeFor[engine.Result](), "config": reflect.TypeFor[config.Config](), "marina-prepared-batch-v3": reflect.TypeFor[review.PreparedBatch](), "marina-batch-result-v3": reflect.TypeFor[review.BatchResult]()}
 	for name, t := range types {
 		schema := shape(t)
 		schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
