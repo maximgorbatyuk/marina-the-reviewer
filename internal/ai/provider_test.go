@@ -3,8 +3,11 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
@@ -14,6 +17,39 @@ var schema = json.RawMessage(`{"type":"object","additionalProperties":false,"req
 
 func provider(url string, stream bool) config.ProviderSnapshot {
 	return config.ProviderSnapshot{Name: "test", Profile: config.Profile{BaseURL: url + "/v1", Model: "model", ContextLength: 16000, TimeoutSeconds: 5, ResponseFormat: "json_object", OutputTokenParameter: "max_completion_tokens", Stream: stream}}
+}
+
+func TestHTTPErrorResponsePayloadTruncation(t *testing.T) {
+	for status, code := range map[int]string{401: "authentication", 429: "rate_limit", 503: "server_error"} {
+		for _, tc := range []struct {
+			name, body string
+			incomplete bool
+			truncated  bool
+		}{
+			{name: "complete", body: "complete body"},
+			{name: "unexpected-eof", body: "partial body", incomplete: true, truncated: true},
+			{name: "size-limit", body: strings.Repeat("x", 65537), truncated: true},
+		} {
+			t.Run(strconv.Itoa(status)+"/"+tc.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if tc.incomplete {
+						w.Header().Set("Content-Length", strconv.Itoa(len(tc.body)+1))
+					}
+					w.WriteHeader(status)
+					w.Write([]byte(tc.body))
+				}))
+				defer server.Close()
+				result, err := Complete(context.Background(), provider(server.URL, false), "", request())
+				var failure *Error
+				if !errors.As(err, &failure) || failure.Code != code || failure.Status != status {
+					t.Fatalf("wrong HTTP error: %v", err)
+				}
+				if result.ResponsePayloadTruncated != tc.truncated || result.ResponsePayload != tc.body[:min(len(tc.body), 65536)] || result.RawResponse != result.ResponsePayload {
+					t.Fatal("HTTP error payload has the wrong content or truncation flag")
+				}
+			})
+		}
+	}
 }
 func request() Request {
 	return Request{SystemPrompt: "review", UserPrompt: "code", Schema: schema, MaximumOutputTokens: 1000}
@@ -86,5 +122,54 @@ func TestSchemaInvalidOutputIsNotTransportSuccess(t *testing.T) {
 	e, ok := err.(*Error)
 	if !ok || e.Code != "invalid_output" {
 		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestMalformedEnvelopeAndInterruptedStreamKeepDiagnosticText(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(map[bool]string{false: "envelope", true: "stream"}[streaming], func(t *testing.T) {
+			body := `{"broken":`
+			if streaming {
+				body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial-text\"}}]}\n\n"
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if streaming {
+					w.Header().Set("Content-Type", "text/event-stream")
+				}
+				w.Write([]byte(body))
+			}))
+			defer server.Close()
+			result, err := Complete(context.Background(), provider(server.URL, streaming), "", request())
+			if err == nil || result.ResponsePayload != body || result.RawResponse != body || streaming && result.RawOutput != "partial-text" {
+				t.Fatalf("lost diagnostic: %+v %v", result, err)
+			}
+		})
+	}
+}
+
+func TestRequestDeadlineDuringResponseBodyIsTimeout(t *testing.T) {
+	streamed := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"partial-output\"}}]}\n\n"))
+		w.(http.Flusher).Flush()
+		close(streamed)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	snapshot := provider(server.URL, true)
+	snapshot.Profile.TimeoutSeconds = 1
+	result, err := Complete(context.Background(), snapshot, "", request())
+	var failure *Error
+	if !errors.As(err, &failure) || failure.Code != "timeout" || !IsRetryable(err) {
+		t.Fatalf("wrong body deadline error: %v", err)
+	}
+	select {
+	case <-streamed:
+	default:
+		t.Fatal("request timed out before its response body started")
+	}
+	if result.RawOutput != "partial-output" || result.ResponsePayload == "" || !result.ResponsePayloadTruncated {
+		t.Fatal("timeout lost its partial response diagnostic")
 	}
 }

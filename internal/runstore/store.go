@@ -15,6 +15,7 @@ import (
 )
 
 const MaximumDocumentBytes = 64 << 20
+const MaximumExecutionDocumentBytes = 128 << 20
 
 type Store struct {
 	dir, planHash string
@@ -83,7 +84,7 @@ func Open(dir, planHash string) (*Store, error) {
 		s.Close()
 		return nil, err
 	}
-	if data, err := ReadPrivate(filepath.Join(dir, "state.json"), MaximumDocumentBytes); err == nil {
+	if data, err := ReadPrivate(filepath.Join(dir, "state.json"), MaximumExecutionDocumentBytes); err == nil {
 		var stored envelope
 		if json.Unmarshal(data, &stored) != nil || stored.Version != 1 || stored.PlanHash != planHash || stored.StateSha256 == "" || stateHash(stored.State) != stored.StateSha256 {
 			s.Close()
@@ -105,7 +106,7 @@ func (s *Store) Close() {
 }
 
 func (s *Store) Read(target any) error {
-	data, err := ReadPrivate(filepath.Join(s.dir, "state.json"), MaximumDocumentBytes)
+	data, err := ReadPrivate(filepath.Join(s.dir, "state.json"), MaximumExecutionDocumentBytes)
 	if err != nil {
 		return err
 	}
@@ -124,7 +125,7 @@ func (s *Store) Write(value any) error {
 	if err != nil {
 		return err
 	}
-	return AtomicJSON(filepath.Join(s.dir, "state.json"), envelope{Version: 1, PlanHash: s.planHash, State: data, StateSha256: stateHash(data)})
+	return AtomicJSONLimit(filepath.Join(s.dir, "state.json"), envelope{Version: 1, PlanHash: s.planHash, State: data, StateSha256: stateHash(data)}, MaximumExecutionDocumentBytes)
 }
 
 func (s *Store) Event(value any) error {
@@ -181,6 +182,13 @@ func ReadBoundedFile(path string, maximum int64) ([]byte, error) {
 }
 
 func AtomicJSON(path string, value any) error {
+	return AtomicJSONLimit(path, value, MaximumDocumentBytes)
+}
+
+func AtomicJSONLimit(path string, value any, maximum int) error {
+	if maximum < 1 {
+		return errors.New("document size limit must be positive")
+	}
 	var buffer bytes.Buffer
 	encoder := json.NewEncoder(&buffer)
 	encoder.SetEscapeHTML(false)
@@ -188,8 +196,16 @@ func AtomicJSON(path string, value any) error {
 	if err := encoder.Encode(value); err != nil {
 		return err
 	}
-	if buffer.Len() > MaximumDocumentBytes {
-		return errors.New("saved document exceeds the size limit")
+	if buffer.Len() > maximum {
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, buffer.Bytes()); err != nil {
+			return err
+		}
+		compact.WriteByte('\n')
+		if compact.Len() > maximum {
+			return errors.New("saved document exceeds the size limit")
+		}
+		buffer = compact
 	}
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
 		return errors.New("output must be a regular file")
