@@ -18,7 +18,7 @@ import (
 )
 
 func TestUsageTracksInvalidOutputAndNoSecrets(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 	r := usage.NewRecorder(path)
 	ctx := usage.WithRecorder(context.Background(), r)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +54,7 @@ func TestUsagePreservesCountsFromInvalidEnvelopes(t *testing.T) {
 		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2,\"total_tokens\":11}}\n\ndata: [DONE]\n\n",
 		"data: {\"error\":{\"message\":\"failed\"},\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2,\"total_tokens\":11}}\n\n",
 	} {
-		path := filepath.Join(t.TempDir(), "usage.jsonl")
+		path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 		r := usage.NewRecorder(path)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
 		_, err := Complete(usage.WithRecorder(context.Background(), r), provider(server.URL, false), "", request())

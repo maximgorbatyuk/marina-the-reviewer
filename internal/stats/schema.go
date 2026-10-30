@@ -1,0 +1,92 @@
+package stats
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+)
+
+const applicationID = 1296323158
+const schemaVersion = 1
+
+const schema = `
+CREATE TABLE api_requests (
+ request_id TEXT PRIMARY KEY,
+ kind TEXT NOT NULL CHECK(kind IN ('start','finish')),
+ at TEXT NOT NULL,
+ started_at TEXT NOT NULL,
+ provider_id TEXT NOT NULL,
+ provider TEXT NOT NULL,
+ profile TEXT NOT NULL,
+ model TEXT NOT NULL,
+ operation TEXT NOT NULL,
+ status TEXT NOT NULL,
+ input_tokens INTEGER CHECK(input_tokens >= 0),
+ output_tokens INTEGER CHECK(output_tokens >= 0),
+ total_tokens INTEGER CHECK(total_tokens >= 0),
+ run_id TEXT NOT NULL,
+ pass_id TEXT NOT NULL
+);
+CREATE INDEX api_requests_started ON api_requests(started_at);
+CREATE INDEX api_requests_provider_started ON api_requests(provider_id, started_at);
+CREATE INDEX api_requests_review ON api_requests(run_id, pass_id);
+CREATE TABLE review_runs (
+ run_id TEXT NOT NULL,
+ pass_id TEXT NOT NULL,
+ plan_hash TEXT NOT NULL,
+ started_at TEXT NOT NULL,
+ finished_at TEXT,
+ status TEXT NOT NULL CHECK(status IN ('unfinished','complete','partial','failed','canceled')),
+ checked_blocks INTEGER NOT NULL CHECK(checked_blocks >= 0),
+ warning_findings INTEGER NOT NULL CHECK(warning_findings >= 0),
+ error_findings INTEGER NOT NULL CHECK(error_findings >= 0),
+ critical_findings INTEGER NOT NULL CHECK(critical_findings >= 0),
+ PRIMARY KEY(run_id, pass_id)
+);
+CREATE INDEX review_runs_started ON review_runs(started_at);
+CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+PRAGMA application_id=1296323158;
+PRAGMA user_version=1;
+`
+
+func initialize(ctx context.Context, db *sql.DB, empty bool) error {
+	var id, version, tables int
+	if err := db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&id); err != nil {
+		return errors.New("cannot read statistics database identity")
+	}
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return errors.New("cannot read statistics schema version")
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").Scan(&tables); err != nil {
+		return errors.New("cannot read statistics schema")
+	}
+	if empty && id == 0 && version == 0 && tables == 0 {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return errors.New("cannot create statistics schema")
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, "PRAGMA auto_vacuum=INCREMENTAL"); err != nil {
+			return errors.New("cannot configure statistics space reclamation")
+		}
+		if _, err := tx.ExecContext(ctx, schema); err != nil {
+			return errors.New("cannot create statistics schema")
+		}
+		if err := tx.Commit(); err != nil {
+			return errors.New("cannot commit statistics schema")
+		}
+	} else if id != applicationID || version != schemaVersion {
+		return errors.New("unsupported or unrelated statistics database")
+	}
+	for _, query := range []string{"SELECT " + eventColumns + " FROM api_requests LIMIT 0", "SELECT " + reviewColumns + " FROM review_runs LIMIT 0", "SELECT key,value FROM metadata LIMIT 0"} {
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			return errors.New("statistics schema does not match its version")
+		}
+		rows.Close()
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=2000; PRAGMA wal_autocheckpoint=256"); err != nil {
+		return errors.New("cannot configure statistics database")
+	}
+	return nil
+}

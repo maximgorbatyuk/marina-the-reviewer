@@ -15,7 +15,7 @@ import (
 
 func usageCommand(args []string, out, errOut io.Writer) int {
 	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
-		fmt.Fprintln(out, "usage: marinadoreview usage [--period 7d|30d|90d] [--json]\n\nShows locally recorded API usage. Without --period, shows all three windows.\nMARINADOREVIEW_USAGE_FILE selects another private usage journal.")
+		fmt.Fprintln(out, "usage: marinadoreview usage [--period 7d|30d|90d] [--json]\n\nShows local token and code review statistics, retained for 90 days. Without --period, shows all three windows.\nMARINADOREVIEW_DB_FILE selects another private SQLite database.")
 		return 0
 	}
 	fs := flag.NewFlagSet("usage", flag.ContinueOnError)
@@ -38,12 +38,12 @@ func usageCommand(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "usage accepts only --period and --json")
 		return 2
 	}
-	path, err := usage.DefaultPath()
+	store, err := usage.DefaultStore()
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 5
 	}
-	report, err := usage.Generate(usage.Store{Path: path}, time.Now().UTC(), days)
+	report, err := usage.Generate(store, time.Now().UTC(), days)
 	if err != nil {
 		fmt.Fprintln(errOut, err)
 		return 5
@@ -72,6 +72,14 @@ func printUsage(out io.Writer, report usage.Report) error {
 		if _, err := fmt.Fprintf(out, "Last %d days (%s to %s, UTC)\n", period.Days, period.Since.Format(time.RFC3339), report.GeneratedAt.Format(time.RFC3339)); err != nil {
 			return err
 		}
+		r := period.Reviews
+		average := "?"
+		if r.AverageDurationMilliseconds != nil {
+			average = fmt.Sprintf("%.0f ms", *r.AverageDurationMilliseconds)
+		}
+		if _, err := fmt.Fprintf(out, "Code reviews\nReviews: %d   Complete: %d   Partial: %d\nFailed: %d   Canceled: %d   Unfinished: %d\nChecked blocks: %d   Average duration: %s\nFindings — Warning: %d   Error: %d   Critical: %d\n\nToken usage by provider\n", r.Total, r.Complete, r.Partial, r.Failed, r.Canceled, r.Unfinished, r.CheckedBlocks, average, r.WarningFindings, r.ErrorFindings, r.CriticalFindings); err != nil {
+			return err
+		}
 		if len(period.Providers) == 0 {
 			if _, err := fmt.Fprint(out, "No API requests recorded.\n\n"); err != nil {
 				return err
@@ -93,10 +101,19 @@ func printUsage(out io.Writer, report usage.Report) error {
 		}
 	}
 	if report.IncompleteTail {
-		if _, err := fmt.Fprintln(out, "Warning: an incomplete final journal entry was excluded."); err != nil {
+		if _, err := fmt.Fprintln(out, "Warning: an incomplete final journal entry was excluded during import."); err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintln(out, "Only API-reported tokens are summed; ? means unavailable. UNKNOWN and PARTIAL requests make totals incomplete.\nUNFINISHED requests are included in UNKNOWN. Reviews, retries, fallback and TUI tests are tracked on this machine.\nEarlier runs and calls from other tools are not included.")
+	if report.ReviewTrackingSince != nil {
+		if _, err := fmt.Fprintf(out, "Review tracking since %s (UTC).\n", report.ReviewTrackingSince.Format(time.RFC3339)); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(out, "Code review tracking has not started; old token history cannot supply review counts."); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(out, "History is retained for 90 days; expired records are removed when storage is used.\nOnly API-reported tokens are summed; ? means unavailable. UNKNOWN and PARTIAL requests make totals incomplete.\nUNFINISHED requests are included in UNKNOWN. Retries, fallback and TUI tests are API attempts; resume does not add a review.\nReview duration includes pauses between runs. Unfinished reviews have no confirmed final outcome.\nEarlier runs and calls from other tools are not included.")
 	return err
 }

@@ -18,6 +18,9 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case networkResult:
 		m.receiveNetwork(msg)
 		return m, nil
+	case usageLoaded:
+		m.receiveUsage(msg)
+		return m, nil
 	case spinner.TickMsg:
 		if m.busy {
 			var command tea.Cmd
@@ -41,9 +44,9 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case homeScreen:
 			switch key {
 			case "up", "k":
-				m.selected = (m.selected + 4) % 5
+				m.selected = (m.selected + len(homeMenu) - 1) % len(homeMenu)
 			case "down", "j":
-				m.selected = (m.selected + 1) % 5
+				m.selected = (m.selected + 1) % len(homeMenu)
 			case "q":
 				return m, m.requestExit()
 			case "r":
@@ -57,10 +60,12 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				case 1:
 					m.showConfiguration()
 				case 2:
-					m.showPrompt()
+					return m, m.showUsage()
 				case 3:
-					m.showHelp()
+					m.showPrompt()
 				case 4:
+					m.showHelp()
+				case 5:
 					return m, m.requestExit()
 				}
 			}
@@ -150,6 +155,8 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.pickerSelected = 0
 				return m, command
 			}
+		case usageScreen:
+			return m, m.updateUsage(message, key)
 		case viewerScreen:
 			switch key {
 			case "home":

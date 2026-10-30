@@ -36,7 +36,7 @@ func TestUsageCountsRetriesFallbackAndNotResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	path := filepath.Join(dir, "usage.jsonl")
+	path := filepath.Join(dir, "stats", "stats.sqlite3")
 	runDir := filepath.Join(dir, "run")
 	for i := 0; i < 2; i++ {
 		recorder := usage.NewRecorder(path)
@@ -56,5 +56,18 @@ func TestUsageCountsRetriesFallbackAndNotResume(t *testing.T) {
 	total := report.Periods[0].Total
 	if primary.Load() != 2 || backup.Load() != 1 || total.Requests != 3 || len(report.Periods[0].Providers) != 2 || total.UnknownUsageRequests != 2 || total.TotalTokens == nil || *total.TotalTokens != 20 {
 		t.Fatalf("bad physical request counts: %+v", total)
+	}
+	reviews := report.Periods[0].Reviews
+	if reviews.Total != 1 || reviews.Complete != 1 || reviews.CheckedBlocks != 1 || reviews.AverageDurationMilliseconds == nil {
+		t.Fatalf("resume changed logical review counts: %+v", reviews)
+	}
+	snapshot, err := (usage.Store{Path: path}).Snapshot(time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range snapshot.Events {
+		if event.RunID != plan.RunID || event.PassID != plan.PassID {
+			t.Fatal("API attempt lost review identity")
+		}
 	}
 }

@@ -15,6 +15,7 @@ type contextKey int
 const (
 	recorderKey contextKey = iota
 	operationKey
+	reviewKey
 )
 
 type Recorder struct {
@@ -33,6 +34,39 @@ func WithOperation(ctx context.Context, operation string) context.Context {
 	return context.WithValue(ctx, operationKey, operation)
 }
 func Enabled(ctx context.Context) bool { r, _ := ctx.Value(recorderKey).(*Recorder); return r != nil }
+
+type reviewIdentity struct{ runID, passID string }
+
+func WithReview(ctx context.Context, runID, passID string) context.Context {
+	return context.WithValue(ctx, reviewKey, reviewIdentity{runID, passID})
+}
+
+func (r *Recorder) store() (Store, error) {
+	if r.path != "" {
+		return Store{Path: r.path}, nil
+	}
+	return DefaultStore()
+}
+
+func RecordReview(ctx context.Context, review Review) {
+	r, _ := ctx.Value(recorderKey).(*Recorder)
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return
+	}
+	r.pending.Add(1)
+	r.mu.Unlock()
+	defer r.pending.Done()
+	store, err := r.store()
+	if err == nil {
+		err = store.SaveReview(review)
+	}
+	r.remember(err)
+}
 
 func (r *Recorder) remember(err error) {
 	if err == nil {
@@ -57,15 +91,11 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string) {
 	}
 	r.pending.Add(1)
 	r.mu.Unlock()
-	path := r.path
-	if path == "" {
-		var err error
-		path, err = DefaultPath()
-		if err != nil {
-			r.remember(err)
-			r.pending.Done()
-			return func(Counts, string) {}
-		}
+	store, err := r.store()
+	if err != nil {
+		r.remember(err)
+		r.pending.Done()
+		return func(Counts, string) {}
 	}
 	var bytes [16]byte
 	if _, err := rand.Read(bytes[:]); err != nil {
@@ -79,7 +109,9 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string) {
 	}
 	now := time.Now().UTC()
 	e := Event{Version: 1, ID: hex.EncodeToString(bytes[:]), Kind: "start", At: now, StartedAt: now, ProviderID: meta.ProviderID, Provider: meta.Provider, Profile: meta.Profile, Model: meta.Model, Operation: operation}
-	store := Store{Path: path}
+	if review, ok := ctx.Value(reviewKey).(reviewIdentity); ok {
+		e.RunID, e.PassID = review.runID, review.passID
+	}
 	r.remember(store.Append(e))
 	var once sync.Once
 	return func(counts Counts, status string) {

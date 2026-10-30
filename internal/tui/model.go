@@ -27,6 +27,7 @@ const (
 	pickerScreen
 	viewerScreen
 	confirmScreen
+	usageScreen
 )
 
 type connectionStatus struct {
@@ -55,6 +56,7 @@ type model struct {
 	width, height, selected, profileSelected int
 	notice, viewerTitle                      string
 	viewer                                   viewport.Model
+	usage                                    usageState
 	spin                                     spinner.Model
 	editor                                   *profileEditor
 	pickerKind                               string
@@ -75,6 +77,8 @@ func newModel(ctx context.Context, path string) *model {
 	m.query.Prompt = "Search: "
 	m.query.CharLimit = 256
 	m.viewer.SoftWrap = true
+	m.usage = usageState{days: 7, viewport: viewport.New()}
+	m.usage.viewport.SoftWrap = true
 	m.reload()
 	m.resize()
 	return m
@@ -264,6 +268,8 @@ func profileHash(cfg config.Config, name string) string {
 }
 
 func (m *model) resize() {
+	m.usage.viewport.SetWidth(max(10, m.width-4))
+	m.usage.viewport.SetHeight(max(1, m.height-8))
 	m.viewer.SetWidth(max(10, m.width-4))
 	m.viewer.SetHeight(max(1, m.height-8))
 	m.query.SetWidth(max(8, m.width-16))

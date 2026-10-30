@@ -15,12 +15,16 @@ class MarinaTheReviewer < Formula
   end
 
   test do
+    ENV["MARINADOREVIEW_DB_FILE"] = (testpath/"stats/stats.sqlite3").to_s
+    ENV.delete "MARINADOREVIEW_USAGE_FILE"
     identity = JSON.parse(shell_output("#{bin}/marinadoreview --version --json"))
     assert_equal "marina-the-reviewer", identity.fetch("tool")
     assert_equal version.to_s, identity.fetch("version")
     assert_match "Run without arguments", shell_output("#{bin}/marinadoreview --help")
     usage = JSON.parse(shell_output("#{bin}/marinadoreview usage --period 7d --json"))
     assert_equal 7, usage.fetch("periods").first.fetch("days")
+    assert_equal 90, usage.fetch("retentionDays")
+    assert_equal 0, usage.fetch("periods").first.fetch("reviews").fetch("total")
     assert_match "marina-the-reviewer", shell_output("#{bin}/marinadoreview capabilities --json")
     mkdir "repo" do
       system "git", "init", "--initial-branch=dev"

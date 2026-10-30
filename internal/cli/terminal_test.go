@@ -36,7 +36,7 @@ func TestTerminalProcess(t *testing.T) {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	recorder := usage.NewRecorder(filepath.Join(filepath.Dir(os.Getenv("MARINADOREVIEW_CONFIG")), "usage.jsonl"))
+	recorder := usage.NewRecorder(filepath.Join(filepath.Dir(os.Getenv("MARINADOREVIEW_CONFIG")), "stats", "stats.sqlite3"))
 	ctx = usage.WithRecorder(ctx, recorder)
 	code := RunContext(ctx, args, os.Stdin, os.Stdout, os.Stderr)
 	if err := recorder.Close(); err != nil {
@@ -207,7 +207,7 @@ func TestTUIBareInvocationConfiguresAndTestsProfile(t *testing.T) {
 	if models.Load() != 1 || probes.Load() != 1 {
 		t.Fatalf("models %d probes %d", models.Load(), probes.Load())
 	}
-	report, err := usage.Generate(usage.Store{Path: filepath.Join(filepath.Dir(path), "usage.jsonl")}, time.Now().UTC(), []int{7})
+	report, err := usage.Generate(usage.Store{Path: filepath.Join(filepath.Dir(path), "stats", "stats.sqlite3")}, time.Now().UTC(), []int{7})
 	if err != nil || report.Periods[0].Total.Requests != 1 || report.Periods[0].Total.TotalTokens == nil || *report.Periods[0].Total.TotalTokens != 8 {
 		t.Fatal("TUI test usage not recorded or model discovery counted as tokens")
 	}
@@ -241,5 +241,65 @@ func TestTUIInterruptCancelsRequestAndRestoresTerminal(t *testing.T) {
 	case <-canceled:
 	case <-time.After(5 * time.Second):
 		t.Fatal("request was not canceled")
+	}
+}
+
+func TestTUIUsagePeriodsReadLocalHistory(t *testing.T) {
+	dir := t.TempDir()
+	journal := filepath.Join(dir, "stats", "stats.sqlite3")
+	t.Setenv("MARINADOREVIEW_DB_FILE", journal)
+	t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
+	now := time.Now().UTC()
+	for i, days := range []int{1, 12, 45} {
+		at := now.Add(-time.Duration(days) * 24 * time.Hour)
+		input, output := int64(10*(i+1)), int64(i+1)
+		event := usage.Event{Version: 1, ID: fmt.Sprint(i), Kind: "finish", At: at, StartedAt: at, ProviderID: "https://example.test/v1", Provider: "Example", Profile: "cloud", Model: "model", Operation: "review", Status: "success", Counts: usage.Counts{Input: &input, Output: &output}}
+		if err := (usage.Store{Path: journal}).Append(event); err != nil {
+			t.Fatal(err)
+		}
+		finished := at.Add(time.Second)
+		if err := (usage.Store{Path: journal}).SaveReview(usage.Review{RunID: fmt.Sprint(i), PassID: "pass", PlanHash: "plan", StartedAt: at, FinishedAt: &finished, Status: "complete"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := os.ReadFile(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.json")
+	s := startTerminal(t, path, nil)
+	s.waitFor(t, "Providers and routing")
+	s.send(t, "jj\r")
+	s.waitFor(t, "Usage — tokens and code reviews")
+	s.waitFor(t, "[1:7d]")
+	s.waitFor(t, "Total: 11")
+	s.waitFor(t, "Reviews: 1")
+	s.send(t, "2")
+	s.waitFor(t, "[2:30d]")
+	s.waitFor(t, "Total: 33")
+	// A resize forces a full frame instead of updates to individual digits.
+	if err := pty.Setsize(s.master, &pty.Winsize{Rows: 24, Cols: 81}); err != nil {
+		t.Fatal(err)
+	}
+	s.waitFor(t, "Reviews: 2")
+	s.send(t, "3")
+	s.waitFor(t, "[3:90d]")
+	s.waitFor(t, "Total: 66")
+	if err := pty.Setsize(s.master, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+		t.Fatal(err)
+	}
+	s.waitFor(t, "Reviews: 3")
+	s.send(t, "\x1b[6~")
+	s.waitFor(t, "Local CLI history only")
+	s.send(t, "\x1b")
+	s.waitFor(t, "> Usage")
+	s.send(t, "q")
+	s.exit(t, 0)
+	after, err := os.ReadFile(journal)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("TUI usage changed the journal")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("TUI usage created provider config")
 	}
 }
