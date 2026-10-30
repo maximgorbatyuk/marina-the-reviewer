@@ -17,21 +17,21 @@ import (
 )
 
 type arguments struct {
-	input, output, document, modelOutput, format                     string
-	repo, base, start, head, baseSHA, startSHA, headSHA              string
-	config, runDir, eventsFile, systemPrompt, promptFile, taskFile   string
-	profile, fallback, baseURL, model, apiKey, apiKeyEnv, apiKeyFile string
-	runID, passID, clusterID, failOn                                 string
-	noFallback, json                                                 bool
-	contextLength, maxOutput, batchIndex                             int
-	maxBytes                                                         int64
+	input, output, document, modelOutput, format                                  string
+	repo, base, start, head, baseSHA, startSHA, headSHA                           string
+	config, runDir, eventsFile, archiveOutput, systemPrompt, promptFile, taskFile string
+	profile, fallback, baseURL, model, apiKey, apiKeyEnv, apiKeyFile              string
+	runID, passID, clusterID, failOn                                              string
+	noFallback, json                                                              bool
+	contextLength, maxOutput, batchIndex                                          int
+	maxBytes                                                                      int64
 }
 
 func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
 	command := args[0]
 	rest := args[1:]
 	if command == "capabilities" {
-		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
+		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "executionArchiveVersion": engine.ExecutionArchiveVersion, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
 	}
 	if command == "config" {
 		if len(rest) == 0 || rest[0] != "init" {
@@ -67,7 +67,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		rest = rest[1:]
 	}
 	switch command {
-	case "prepare", "plan", "run", "review", "validate", "compat-import", "compat-export", "config-init":
+	case "prepare", "plan", "run", "review", "validate", "archive", "compat-import", "compat-export", "config-init":
 	default:
 		fmt.Fprintf(errOut, "unknown command: %s\n", command)
 		return 2
@@ -78,6 +78,25 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	}
 	if err != nil {
 		return 2
+	}
+	if err = validateArchivePaths(command, a); err != nil {
+		fmt.Fprintln(errOut, err)
+		return 2
+	}
+	if command == "archive" {
+		archive, err := engine.ExportArchive(a.runDir)
+		if err != nil {
+			fmt.Fprintln(errOut, err)
+			return 5
+		}
+		if a.output != "" && a.output != "-" {
+			if err = archive.Write(a.output); err != nil {
+				fmt.Fprintln(errOut, "output could not be written")
+				return 5
+			}
+			return 0
+		}
+		return outputValue(archive, a.output, out, errOut)
 	}
 	if a.failOn != "" && a.failOn != "warning" && a.failOn != "error" && a.failOn != "critical" {
 		fmt.Fprintln(errOut, "--fail-on must be warning, error or critical")
@@ -409,6 +428,7 @@ func parseArguments(command string, args []string, errOut io.Writer) (arguments,
 	f.StringVar(&a.config, "config", "", "provider configuration path")
 	f.StringVar(&a.runDir, "run-dir", "", "private resume directory")
 	f.StringVar(&a.eventsFile, "events-file", "", "separate JSONL events path")
+	f.StringVar(&a.archiveOutput, "archive-output", "", "private execution archive JSON path")
 	f.StringVar(&a.systemPrompt, "system-prompt", "", "review policy override")
 	f.StringVar(&a.promptFile, "system-prompt-file", "", "review policy file")
 	f.StringVar(&a.taskFile, "task-file", "", "task context JSON file")
@@ -502,6 +522,11 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 	if dir == "" {
 		dir = filepath.Join("review-run", p.RunID)
 	}
+	a.runDir = dir
+	if err := validateArchivePaths("run", a); err != nil {
+		fmt.Fprintln(errOut, err)
+		return 2
+	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		fmt.Fprintln(errOut, "run directory could not be created")
 		return 5
@@ -521,6 +546,16 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 	}
 	if code := outputValue(wire, a.output, out, errOut); code != 0 {
 		return code
+	}
+	if a.archiveOutput != "" {
+		archive, archiveErr := engine.ExportArchive(dir)
+		if archiveErr == nil {
+			archiveErr = archive.Write(a.archiveOutput)
+		}
+		if archiveErr != nil {
+			fmt.Fprintln(errOut, "execution archive could not be written:", archiveErr)
+			return 5
+		}
 	}
 	if a.eventsFile != "" {
 		data, e := runstore.ReadPrivate(filepath.Join(dir, "events.jsonl"), runstore.MaximumDocumentBytes)

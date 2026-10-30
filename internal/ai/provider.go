@@ -26,6 +26,7 @@ type Request struct {
 	UserPrompt          string
 	Schema              json.RawMessage
 	MaximumOutputTokens int
+	OnPrepared          func(string, []byte) error
 }
 
 type Usage struct {
@@ -35,11 +36,15 @@ type Usage struct {
 }
 
 type Response struct {
-	Output       json.RawMessage `json:"output"`
-	FinishReason string          `json:"finishReason"`
-	Usage        Usage           `json:"usage"`
-	Elapsed      time.Duration   `json:"elapsed"`
-	Channel      string          `json:"channel"`
+	Output                   json.RawMessage `json:"output"`
+	RawOutput                string          `json:"-"`
+	RawResponse              string          `json:"-"`
+	ResponsePayload          string          `json:"-"`
+	ResponsePayloadTruncated bool            `json:"-"`
+	FinishReason             string          `json:"finishReason"`
+	Usage                    Usage           `json:"usage"`
+	Elapsed                  time.Duration   `json:"elapsed"`
+	Channel                  string          `json:"channel"`
 }
 
 type Error struct {
@@ -106,6 +111,11 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	if err != nil {
 		return Response{}, &Error{Code: "configuration", Message: "invalid provider URL"}
 	}
+	if input.OnPrepared != nil {
+		if err := input.OnPrepared(endpoint, encoded); err != nil {
+			return Response{}, &Error{Code: "configuration", Message: "provider request archive could not be saved"}
+		}
+	}
 	timeout := time.Duration(profile.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
@@ -137,7 +147,14 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(response.Body, 65536))
+		data, readErr := io.ReadAll(io.LimitReader(response.Body, 65537))
+		result.ResponsePayloadTruncated = readErr != nil
+		if len(data) > 65536 {
+			result.ResponsePayloadTruncated = true
+			data = data[:65536]
+		}
+		result.RawResponse = string(data)
+		result.ResponsePayload = string(data)
 		var value envelope
 		if json.Unmarshal(data, &value) == nil {
 			result.Usage = usageOf(value)
@@ -162,16 +179,24 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBytes+1))
 	if err != nil {
+		result.RawResponse = string(data)
+		result.ResponsePayload = string(data)
+		result.ResponsePayloadTruncated = true
 		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") || bytes.HasPrefix(bytes.TrimSpace(data), []byte("data:")) {
-			_, _, _, result.Usage, _ = parseSSE(data)
+			result.RawOutput, _, result.FinishReason, result.Usage, _ = parseSSE(data)
 		}
 		if ctx.Err() != nil {
 			return result, ctx.Err()
 		}
+		if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+			return result, &Error{Code: "timeout", Message: "provider response did not finish before its deadline"}
+		}
 		return result, &Error{Code: "network_error", Message: "provider response could not be read"}
 	}
 	if len(data) > maximumResponseBytes {
-		return Response{}, &Error{Code: "invalid_output", Message: "provider response exceeds the size limit"}
+		result.RawResponse = string(data[:maximumResponseBytes])
+		result.ResponsePayload, result.ResponsePayloadTruncated = result.RawResponse, true
+		return result, &Error{Code: "invalid_output", Message: "provider response exceeds the size limit"}
 	}
 	var content, reasoning, finish string
 	var usage Usage
@@ -182,9 +207,12 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	}
 	result.Usage = usage
 	if err != nil {
+		result.RawOutput = content
+		result.RawResponse = string(data)
+		result.ResponsePayload = string(data)
 		return result, &Error{Code: "invalid_output", Message: "provider completion envelope is invalid"}
 	}
-	result = Response{Output: json.RawMessage(content), FinishReason: finish, Usage: usage, Elapsed: time.Since(started), Channel: "content"}
+	result = Response{Output: json.RawMessage(content), RawOutput: content, ResponsePayload: string(data), FinishReason: finish, Usage: usage, Elapsed: time.Since(started), Channel: "content"}
 	if finish == "length" || finish == "max_tokens" {
 		return result, &Error{Code: "output_truncated", Message: "provider output token limit was reached", Partial: &result}
 	}
@@ -201,6 +229,7 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	if !validate(content) {
 		if strings.TrimSpace(content) == "" && validate(reasoning) {
 			result.Output = json.RawMessage(reasoning)
+			result.RawOutput = reasoning
 			result.Channel = "reasoning_json"
 		} else {
 			return result, &Error{Code: "invalid_output", Message: "model output does not match the response schema", Partial: &result}
@@ -292,13 +321,13 @@ func parseSSE(data []byte) (string, string, string, Usage, error) {
 		}
 		var value envelope
 		if json.Unmarshal([]byte(payload), &value) != nil {
-			return "", "", "", usage, errors.New("invalid stream event")
+			return content.String(), reasoning.String(), finish, usage, errors.New("invalid stream event")
 		}
 		if value.Usage != nil || value.Groq != nil && value.Groq.Usage != nil {
 			usage = usageOf(value)
 		}
 		if len(value.Error) > 0 && string(value.Error) != "null" {
-			return "", "", "", usage, errors.New("invalid stream event")
+			return content.String(), reasoning.String(), finish, usage, errors.New("invalid stream event")
 		}
 		if len(value.Choices) > 0 {
 			content.WriteString(value.Choices[0].Delta.Content)
@@ -309,10 +338,10 @@ func parseSSE(data []byte) (string, string, string, Usage, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", "", "", usage, err
+		return content.String(), reasoning.String(), finish, usage, err
 	}
 	if finish == "" {
-		return "", "", "", usage, errors.New("stream has no terminal finish reason")
+		return content.String(), reasoning.String(), finish, usage, errors.New("stream has no terminal finish reason")
 	}
 	return content.String(), reasoning.String(), finish, usage, nil
 }

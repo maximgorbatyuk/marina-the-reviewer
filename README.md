@@ -116,6 +116,22 @@ Repeat the last command with the same plan and directory to reuse completed resu
 
 Source, prompt, routing and budgets are fixed in a plan. Use `plan --input plan.json ...` to change them. `run` accepts credential overrides but rejects provider/model/routing/prompt/budget overrides. Changing the endpoint does not implicitly reuse its old token.
 
+### Execution archives
+
+An integration can retain the native result and a separate versioned execution archive:
+
+```sh
+marinadoreview run --input plan.json --run-dir ./review-run/my-change \
+  --output result.json --archive-output archive.json
+marinadoreview archive --run-dir ./review-run/my-change --output recovered-archive.json
+```
+
+`capabilities --json` reports `executionArchiveVersion: 1`. The archive has kind `ReviewExecutionArchive` and includes the native result, source commit IDs, the semantic plan hash, the SHA-256 of the saved `plan.json` bytes, work lineage, prepared inputs, candidate audit and each attempt. Attempts include a physical request ID shared with token statistics, the actual HTTP request and response payloads, model output as a string, usage, finish reason and safe diagnostics. Invalid or truncated model text remains a string. Credentials are redacted, including JSON-escaped values. A bounded response prefix is marked with `responsePayloadTruncated` when the full body is unavailable.
+
+The `archive` command reads a saved run without provider configuration or an AI request. It requires the run to be unlocked and rejects a changed plan or corrupt state. It can recover the native result when `result.json` was not written. A request interrupted before its final state was saved is reported as `unknown`; export does not retry it. Use the same saved plan and run directory to resume execution. Running `review` again creates a new plan and new review IDs.
+
+Archives and run state are private files with a 128 MiB limit. Snapshots, plans, inputs and native results keep the 64 MiB document limit. An oversized archive fails explicitly and preserves an existing output file. Archive output must be separate from input, result, event and run-state files. Keep the plan and run directory for recovery. Runs made before archive support can still resume, but export fails if an earlier attempt has no captured archive data. The existing native `ReviewResult` format and `marina-v3` export remain unchanged.
+
 Primary overrides are available for one-shot reviews:
 
 ```sh
@@ -130,7 +146,7 @@ marinadoreview review --repo . --base HEAD~1 --no-fallback \
 
 After bounded retries, network errors, timeouts, HTTP 429 and HTTP 5xx can switch an unfinished batch to the chosen fallback. Its budget is recalculated and source can be split. Completed batches are retained; other configured profiles are never tried automatically.
 
-Authentication errors, invalid requests, invalid model output, rejected findings and cancellation do not trigger fallback. Invalid output can receive one correction. Context overflow can split a batch with replan depth limited to three. Switching providers preserves those counters. Resume does not repeat a request with an uncertain outcome after interruption; inspect the journal and start a fresh run if another request is wanted.
+Authentication errors, invalid requests, invalid model output, rejected findings and cancellation do not trigger fallback. Invalid output can receive one correction. Context overflow can split a batch with replan depth limited to three. A correction that cannot fit the reserved context uses the same bounded split before sending a request. Switching providers preserves those counters. Resume does not repeat a request with an uncertain outcome after interruption; inspect the journal and start a fresh run if another request is wanted.
 
 ## Token usage
 
