@@ -45,38 +45,6 @@ func TestStoreIsPrivateAndConcurrent(t *testing.T) {
 	}
 }
 
-func TestStoreRecoversOnlyIncompleteTail(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "usage.jsonl")
-	s := Store{Path: path}
-	e := event("one", "start", time.Now().UTC())
-	if err := s.Append(e); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.WriteString(`{"version":1,"kind":"fin`)
-	f.Close()
-	events, tail, err := s.Read()
-	if err != nil || !tail || len(events) != 1 {
-		t.Fatal("incomplete tail was not reported")
-	}
-	if err := s.Append(event("two", "start", time.Now().UTC())); err != nil {
-		t.Fatal(err)
-	}
-	events, tail, err = s.Read()
-	if err != nil || tail || len(events) != 2 {
-		t.Fatal("append did not repair incomplete tail")
-	}
-	if err := os.WriteFile(path, []byte("broken\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := s.Read(); err == nil {
-		t.Fatal("corrupt complete record accepted")
-	}
-}
-
 func TestStoreRejectsUnsafePathAndUnknownVersion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "usage.jsonl")
@@ -112,7 +80,7 @@ func TestStoreRejectsUnsafePathAndUnknownVersion(t *testing.T) {
 
 func TestReportWindowsAndDeduplication(t *testing.T) {
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	store := Store{Path: filepath.Join(t.TempDir(), "usage.jsonl")}
+	store := Store{Path: filepath.Join(t.TempDir(), "private", "stats.sqlite3"), Now: func() time.Time { return now }}
 	for i, days := range []int{0, 7, 8, 30, 31, 90, 91} {
 		at := now.Add(-time.Duration(days) * 24 * time.Hour)
 		e := event(string(rune('a'+i)), "start", at)
@@ -143,7 +111,7 @@ func TestReportWindowsAndDeduplication(t *testing.T) {
 
 func TestUnknownPartialPendingAndProviderIdentity(t *testing.T) {
 	now := time.Now().UTC()
-	s := Store{Path: filepath.Join(t.TempDir(), "usage.jsonl")}
+	s := Store{Path: filepath.Join(t.TempDir(), "private", "stats.sqlite3")}
 	for _, id := range []string{"known", "unknown", "pending", "partial", "other"} {
 		e := event(id, "start", now)
 		if id == "other" {
@@ -194,34 +162,6 @@ func TestNoHistoryDoesNotCreateFiles(t *testing.T) {
 	}
 }
 
-func TestAppendCannotCrossJournalLimit(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "usage.jsonl")
-	e := event("one", "start", time.Now().UTC())
-	line, _ := json.Marshal(e)
-	line = append(line, '\n')
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Truncate(maxLedgerBytes - int64(len(line))); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.Seek(0, 2); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.Write(line); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	if err := (Store{Path: path}).Append(e); err == nil {
-		t.Fatal("append crossed journal size limit")
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.Size() != maxLedgerBytes {
-		t.Fatal("boundary append changed the file")
-	}
-}
-
 func TestUsageWriterProcess(t *testing.T) {
 	path := os.Getenv("MARINADOREVIEW_TEST_USAGE_PATH")
 	if path == "" {
@@ -235,7 +175,7 @@ func TestUsageWriterProcess(t *testing.T) {
 }
 
 func TestStoreConcurrentProcesses(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 	commands := []*exec.Cmd{}
 	for i := 0; i < 3; i++ {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestUsageWriterProcess$")
@@ -259,7 +199,7 @@ func TestStoreConcurrentProcesses(t *testing.T) {
 func TestReportRejectsOverflowAndConflictingResults(t *testing.T) {
 	for _, kind := range []string{"overflow", "conflict"} {
 		t.Run(kind, func(t *testing.T) {
-			store := Store{Path: filepath.Join(t.TempDir(), "usage.jsonl")}
+			store := Store{Path: filepath.Join(t.TempDir(), "private", "stats.sqlite3")}
 			e := event("first", "finish", time.Now().UTC())
 			e.Status = "success"
 			e.Counts.Total = number(math.MaxInt64)
@@ -270,7 +210,14 @@ func TestReportRejectsOverflowAndConflictingResults(t *testing.T) {
 				e.ID = "second"
 			}
 			e.Counts.Total = number(1)
-			if err := store.Append(e); err != nil {
+			err := store.Append(e)
+			if kind == "conflict" {
+				if err == nil {
+					t.Fatal("conflicting result accepted")
+				}
+				return
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err := Generate(store, time.Now().UTC(), []int{7}); err == nil {
@@ -282,6 +229,7 @@ func TestReportRejectsOverflowAndConflictingResults(t *testing.T) {
 
 func TestDefaultUsagePathIsIndependentOfProviderConfig(t *testing.T) {
 	t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
+	t.Setenv("MARINADOREVIEW_DB_FILE", "")
 	first, err := DefaultPath()
 	if err != nil {
 		t.Fatal(err)

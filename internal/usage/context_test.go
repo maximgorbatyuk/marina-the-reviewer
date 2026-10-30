@@ -8,7 +8,7 @@ import (
 )
 
 func TestRecorderRecordsOnePhysicalAttempt(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 	r := NewRecorder(path)
 	ctx := WithOperation(WithRecorder(context.Background(), r), "connection-test")
 	finish := Begin(ctx, Metadata{ProviderID: "https://api.example/v1", Provider: "Example", Profile: "backup", Model: "chosen"})
@@ -18,7 +18,7 @@ func TestRecorderRecordsOnePhysicalAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	events, _, err := (Store{Path: path}).Read()
-	if err != nil || len(events) != 2 || events[1].Operation != "connection-test" {
+	if err != nil || len(events) != 1 || events[0].Operation != "connection-test" {
 		t.Fatalf("events %d: %v", len(events), err)
 	}
 	report, err := Generate(Store{Path: path}, time.Now().UTC(), []int{7})

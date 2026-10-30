@@ -25,6 +25,8 @@ var (
 	muted  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
+var homeMenu = []string{"Providers and routing", "Configuration and connection status", "Usage", "Default review prompt", "Help", "Exit"}
+
 func safeText(value string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
@@ -62,7 +64,7 @@ func (m *model) View() tea.View {
 			mark = " [unsaved]"
 		}
 		lines = append(lines, "Config: "+safeText(m.path)+mark, m.roleLine("Primary", m.cfg.Routing.Primary), m.roleLine("Fallback", m.cfg.Routing.Fallback), "")
-		for i, item := range []string{"Providers and routing", "Configuration and connection status", "Default review prompt", "Help", "Exit"} {
+		for i, item := range homeMenu {
 			body = append(body, selection(item, m.selected == i))
 		}
 		focus = m.selected
@@ -138,6 +140,10 @@ func (m *model) View() tea.View {
 		}
 		focus = m.pickerSelected
 		foot = "Type to filter  ↑/↓ select  Enter apply  Esc back"
+	case usageScreen:
+		lines = append(lines, cyan.Render("Usage — tokens and code reviews"), m.usagePeriods(), "")
+		body = strings.Split(m.usage.viewport.View(), "\n")
+		foot = "←/→ period  ↑/↓ scroll  r refresh  Esc back  ? help"
 	case viewerScreen:
 		lines = append(lines, cyan.Render(m.viewerTitle), "")
 		body = strings.Split(m.viewer.View(), "\n")
@@ -161,7 +167,10 @@ func (m *model) View() tea.View {
 		foot = m.spin.View() + " Request in progress; Esc cancels. " + foot
 	}
 	notice := safeText(m.notice)
-	if m.loadFailed {
+	if m.screen == usageScreen {
+		notice = ""
+	}
+	if m.loadFailed && m.screen != usageScreen {
 		notice = "Config unavailable. " + notice
 	}
 	available := max(1, m.height-len(lines)-3)
@@ -268,6 +277,16 @@ Connection test
   It does not send source code, retry or switch to fallback.
   Verified is the last test result, not a persistent connection.
   Parameter changes reset the status. Esc cancels a running request.
+
+Usage screen
+  Open Usage from the home menu. 1/2/3 select 7/30/90 days.
+  Left/Right or Tab changes the period. r refreshes local data.
+  Arrows, PgUp/PgDn and Home/End scroll. Esc returns home.
+  Tokens and code review counts match the usage command.
+  SQLite keeps 90 days. Missing usage is shown as ?.
+  Unknown or partial requests make token totals incomplete.
+  This screen does not send AI requests. It can import old history
+  and remove expired statistics from the local database.
 
 Review commands
   prepare   Read pinned Git objects and prepare source context

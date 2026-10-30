@@ -3,9 +3,10 @@ package usage
 import (
 	"errors"
 	"math"
-	"reflect"
 	"slices"
 	"time"
+
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/stats"
 )
 
 type Totals struct {
@@ -32,14 +33,60 @@ type Period struct {
 	Since     time.Time       `json:"since"`
 	Providers []ProviderUsage `json:"providers"`
 	Total     Totals          `json:"total"`
+	Reviews   ReviewTotals    `json:"reviews"`
 }
 
 type Report struct {
-	SchemaVersion  int        `json:"schemaVersion"`
-	GeneratedAt    time.Time  `json:"generatedAt"`
-	TrackingSince  *time.Time `json:"trackingSince"`
-	IncompleteTail bool       `json:"incompleteTail"`
-	Periods        []Period   `json:"periods"`
+	SchemaVersion       int        `json:"schemaVersion"`
+	GeneratedAt         time.Time  `json:"generatedAt"`
+	TrackingSince       *time.Time `json:"trackingSince"`
+	ReviewTrackingSince *time.Time `json:"reviewTrackingSince"`
+	RetentionDays       int        `json:"retentionDays"`
+	IncompleteTail      bool       `json:"incompleteTail"`
+	Periods             []Period   `json:"periods"`
+}
+
+type ReviewTotals struct {
+	Total                       int64    `json:"total"`
+	Complete                    int64    `json:"complete"`
+	Partial                     int64    `json:"partial"`
+	Failed                      int64    `json:"failed"`
+	Canceled                    int64    `json:"canceled"`
+	Unfinished                  int64    `json:"unfinished"`
+	CheckedBlocks               int64    `json:"checkedBlocks"`
+	WarningFindings             int64    `json:"warningFindings"`
+	ErrorFindings               int64    `json:"errorFindings"`
+	CriticalFindings            int64    `json:"criticalFindings"`
+	AverageDurationMilliseconds *float64 `json:"averageDurationMilliseconds"`
+}
+
+func (t *ReviewTotals) count(r stats.Review) error {
+	t.Total++
+	switch r.Status {
+	case "complete":
+		t.Complete++
+	case "partial":
+		t.Partial++
+	case "failed":
+		t.Failed++
+	case "canceled":
+		t.Canceled++
+	default:
+		t.Unfinished++
+	}
+	for _, field := range []struct {
+		sum *int64
+		n   int64
+	}{
+		{&t.CheckedBlocks, r.CheckedBlocks}, {&t.WarningFindings, r.WarningFindings},
+		{&t.ErrorFindings, r.ErrorFindings}, {&t.CriticalFindings, r.CriticalFindings},
+	} {
+		if field.n < 0 || *field.sum > math.MaxInt64-field.n {
+			return errors.New("review statistics exceed the supported range")
+		}
+		*field.sum += field.n
+	}
+	return nil
 }
 
 func add(sum **int64, n *int64) error {
@@ -88,46 +135,26 @@ func (t *Totals) count(e Event) error {
 	return nil
 }
 
-func sameRequest(a, b Event) bool {
-	return a.StartedAt.Equal(b.StartedAt) && a.ProviderID == b.ProviderID && a.Provider == b.Provider && a.Profile == b.Profile && a.Model == b.Model && a.Operation == b.Operation
-}
-
 func Generate(store Store, now time.Time, days []int) (Report, error) {
-	events, tail, err := store.Read()
-	if err != nil {
-		return Report{}, err
-	}
-	requests := map[string]Event{}
-	for _, e := range events {
-		previous, ok := requests[e.ID]
-		if ok {
-			if !sameRequest(previous, e) {
-				return Report{}, errors.New("usage journal contains conflicting request identities")
-			}
-			if previous.Kind == "finish" {
-				if e.Kind == "finish" && (!reflect.DeepEqual(e.Counts, previous.Counts) || e.Status != previous.Status) {
-					return Report{}, errors.New("usage journal contains conflicting results")
-				}
-				continue
-			}
-		}
-		requests[e.ID] = e
-	}
-	now = now.UTC()
-	report := Report{SchemaVersion: 1, GeneratedAt: now, IncompleteTail: tail, Periods: []Period{}}
-	for _, e := range requests {
-		if !e.StartedAt.After(now) && (report.TrackingSince == nil || e.StartedAt.Before(*report.TrackingSince)) {
-			at := e.StartedAt
-			report.TrackingSince = &at
-		}
-	}
+	maxDays := 7
 	for _, d := range days {
 		if d != 7 && d != 30 && d != 90 {
 			return Report{}, errors.New("usage period must be 7d, 30d or 90d")
 		}
+		maxDays = max(maxDays, d)
+	}
+	now = now.UTC()
+	snapshot, err := store.Window(now, maxDays)
+	if err != nil {
+		return Report{}, err
+	}
+	report := Report{SchemaVersion: 1, GeneratedAt: now, TrackingSince: snapshot.TrackingSince,
+		ReviewTrackingSince: snapshot.ReviewTrackingSince, RetentionDays: 90,
+		IncompleteTail: snapshot.IncompleteTail, Periods: []Period{}}
+	for _, d := range days {
 		period := Period{Days: d, Since: now.Add(-time.Duration(d) * 24 * time.Hour), Providers: []ProviderUsage{}}
 		groups := map[string]*ProviderUsage{}
-		for _, e := range requests {
+		for _, e := range snapshot.Events {
 			if e.StartedAt.Before(period.Since) || e.StartedAt.After(now) {
 				continue
 			}
@@ -148,6 +175,24 @@ func Generate(store Store, now time.Time, days []int) (Report, error) {
 			if err := period.Total.count(e); err != nil {
 				return Report{}, err
 			}
+		}
+		var durationSum float64
+		var finished int64
+		for _, r := range snapshot.Reviews {
+			if r.StartedAt.Before(period.Since) || r.StartedAt.After(now) {
+				continue
+			}
+			if err := period.Reviews.count(r); err != nil {
+				return Report{}, err
+			}
+			if r.FinishedAt != nil && r.Status != "unfinished" && !r.FinishedAt.Before(r.StartedAt) {
+				durationSum += float64(r.FinishedAt.Sub(r.StartedAt)) / float64(time.Millisecond)
+				finished++
+			}
+		}
+		if finished > 0 {
+			average := durationSum / float64(finished)
+			period.Reviews.AverageDurationMilliseconds = &average
 		}
 		for _, group := range groups {
 			slices.Sort(group.Profiles)

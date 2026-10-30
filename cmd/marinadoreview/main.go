@@ -24,7 +24,7 @@ func main() {
 	code := cli.RunContext(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
 	cancel()
 	if err := recorder.Close(); err != nil {
-		fmt.Fprintln(os.Stderr, "Warning: local token usage was not fully recorded:", err)
+		fmt.Fprintln(os.Stderr, "Warning: local statistics were not fully recorded:", err)
 	}
 	os.Exit(code)
 }
