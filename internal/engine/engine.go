@@ -17,6 +17,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
 const Baseline = "acd37b498f1c9367b4044e8f9d5ad55b90617e59"
@@ -218,7 +219,7 @@ func (p Plan) Validate() error {
 	return nil
 }
 
-func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (Result, error) {
+func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (result Result, runErr error) {
 	if err := plan.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -235,7 +236,9 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (R
 		return Result{}, err
 	}
 	s := state{Works: []work{}, Attempts: []Attempt{}, Outputs: []modelOutput{}, StartedAt: time.Now().UTC()}
+	newRun := false
 	if err = store.Read(&s); errors.Is(err, os.ErrNotExist) {
+		newRun = true
 		for _, b := range plan.Prepared.Batches {
 			s.Works = append(s.Works, work{ID: UUID(), Role: "primary", Prepared: b})
 		}
@@ -270,6 +273,37 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (R
 	}
 	if s.StartedAt.IsZero() {
 		return Result{}, errors.New("saved run has no execution deadline")
+	}
+	if newRun || pending {
+		statistics := usage.Review{RunID: plan.RunID, PassID: plan.PassID, PlanHash: review.Hash(string(encoded)), StartedAt: s.StartedAt, Status: "unfinished"}
+		usage.RecordReview(ctx, statistics)
+		ctx = usage.WithReview(ctx, plan.RunID, plan.PassID)
+		defer func() {
+			ended := time.Now().UTC()
+			statistics.FinishedAt = &ended
+			statistics.Status = result.Status
+			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
+				statistics.Status = "canceled"
+			} else if statistics.Status == "" {
+				statistics.Status = "failed"
+			}
+			aggregate := result
+			if aggregate.Kind == "" {
+				aggregate = finish(plan, s)
+			}
+			statistics.CheckedBlocks = int64(len(aggregate.Result.CheckedBlockIDs))
+			for _, finding := range aggregate.Result.Findings {
+				switch finding.Severity {
+				case 1:
+					statistics.WarningFindings++
+				case 2:
+					statistics.ErrorFindings++
+				case 3:
+					statistics.CriticalFindings++
+				}
+			}
+			usage.RecordReview(ctx, statistics)
+		}()
 	}
 	runCtx, cancel := context.WithDeadline(ctx, s.StartedAt.Add(time.Duration(plan.DeadlineSeconds)*time.Second))
 	defer cancel()
@@ -430,7 +464,7 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (R
 			break
 		}
 	}
-	result := finish(plan, s)
+	result = finish(plan, s)
 	if result.Status != "complete" {
 		return result, errors.New("review is incomplete; inspect result limitations and the private run journal")
 	}

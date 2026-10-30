@@ -20,6 +20,27 @@ bin/marinadoreview capabilities --json
 
 ## Configure providers
 
+Run without arguments in a terminal to open the configuration TUI:
+
+```sh
+marinadoreview
+marinadoreview --config ./config.local.json
+```
+
+The home screen shows the version, configuration path, and primary/fallback status. Open **Providers and routing** to create or edit profiles. Choose an AI provider preset (OpenAI, OpenRouter, DeepSeek, Groq, Ollama, or another OpenAI-compatible API), enter the API URL and authorization source, then load the model list or type a model ID. The model list depends on the server; manual entry remains available when listing is unsupported or unavailable.
+
+Paste an API token into its masked field, select an environment variable or private token file, or explicitly select no authorization for a suitable local server. A blank replacement preserves a saved token. Selecting an authorization source again clears its saved value; changing the API URL requires entering credentials again. Tokens and extra parameter values are hidden in the configuration viewer.
+
+**Test connection** sends one small AI request to the selected model using its JSON settings. It can use billed tokens, sends no source code, and does not retry or switch to fallback. A successful model-list request does not prove inference access. The status shows the last test time and duration; changes reset it, and a new session starts as untested. A small successful test does not guarantee a complete code review or support for every response schema. Offline configuration is supported without a successful test.
+
+Apply profile edits to the draft, then press `s` in Providers to save. Use `p` to assign the selected profile as primary, `f` for fallback, and `d` to disable fallback. Other profiles remain saved. Advanced settings expose JSON mode, token/context limits, timeout, retries, concurrency and streaming; existing extra parameters remain intact. Save validates the whole configuration and writes it atomically with private permissions. If the file changed externally, reload it before saving.
+
+The menu also provides configuration/status details, token and code review statistics in Usage, the full built-in review prompt, and help. Use arrows or `j`/`k` in menus, Tab/Shift+Tab in forms, Enter to select, and Esc to return or cancel a request. Prompt and help viewers support scrolling and Home/End. Terminal paste, including Cmd+V on macOS, is supported. `q` quits outside input fields; Ctrl+C cancels with exit code 130. Unsaved edits are not written automatically.
+
+The TUI requires terminal stdin and stdout. Without a terminal, an invocation without arguments returns exit code 2 with a stderr diagnostic and empty stdout. Use `--help` for text help or a subcommand for scripts. Existing JSON commands do not start the TUI. `--config PATH` or `MARINADOREVIEW_CONFIG` selects the same config v1 file used by review commands.
+
+To create an example configuration without the TUI:
+
 ```sh
 marinadoreview config init
 ```
@@ -91,7 +112,7 @@ marinadoreview plan --input snapshot.json --profile cloud --output plan.json
 marinadoreview run --input plan.json --run-dir ./review-run/my-change --output result.json
 ```
 
-Repeat the last command with the same plan and directory to reuse completed results. The private journal records actual provider/model/role, request hashes, attempts, usage, lineage and model outputs. Tokens are excluded from plans, journals, results and events. A plan has a one-hour total execution deadline, including resume, plus a timeout for each request.
+Repeat the last command with the same plan and directory to reuse completed results. The private journal records actual provider/model/role, request hashes, attempts, usage, lineage and model outputs. API keys are excluded from plans, journals, results and events. A plan has a one-hour total execution deadline, including resume, plus a timeout for each request.
 
 Source, prompt, routing and budgets are fixed in a plan. Use `plan --input plan.json ...` to change them. `run` accepts credential overrides but rejects provider/model/routing/prompt/budget overrides. Changing the endpoint does not implicitly reuse its old token.
 
@@ -110,6 +131,33 @@ marinadoreview review --repo . --base HEAD~1 --no-fallback \
 After bounded retries, network errors, timeouts, HTTP 429 and HTTP 5xx can switch an unfinished batch to the chosen fallback. Its budget is recalculated and source can be split. Completed batches are retained; other configured profiles are never tried automatically.
 
 Authentication errors, invalid requests, invalid model output, rejected findings and cancellation do not trigger fallback. Invalid output can receive one correction. Context overflow can split a batch with replan depth limited to three. Switching providers preserves those counters. Resume does not repeat a request with an uncertain outcome after interruption; inspect the journal and start a fresh run if another request is wanted.
+
+## Token usage
+
+```sh
+marinadoreview usage
+marinadoreview usage --period 7d
+marinadoreview usage --period 30d --json
+marinadoreview usage --period 90d
+```
+
+Without `--period`, the command shows all three rolling windows: 7, 30 and 90 days. Each window includes code review statistics and API token usage by normalized provider endpoint. Several profiles of one endpoint are combined; the JSON report includes their profile and model names. Windows use the UTC request or review start time, include their lower boundary, and exclude future records.
+
+In the TUI (`marinadoreview` without arguments), open **Usage** from the home menu. Press `1`, `2` or `3` to select 7, 30 or 90 days, or use Left/Right and Tab. Press `r` to refresh, use arrows, PgUp/PgDn or Home/End to scroll, and Esc to return. Both views use the same report and require no provider configuration. Viewing statistics sends no AI requests, but can import old history and maintain the local database.
+
+Token counters sum API-reported input, output and total tokens. If total is absent but both input and output are present, their sum is used. Source preparation estimates are not spent tokens. Every retry, fallback, correction and TUI connection test is a separate API attempt; model listing and offline commands add no usage. `UNKNOWN` includes unfinished requests without usage; `PARTIAL` means some token fields are missing. `?` means unavailable, rather than zero. Numeric sums include only known values. Failed or invalid answers can still consume tokens. Interrupted streams may lose the final usage event. OpenAI streaming requests ask for usage unless explicit `stream_options` are configured; arbitrary compatible endpoints retain their settings and may need `extraParameters.stream_options.include_usage` enabled. Groq streaming metadata is also supported.
+
+A code review is one logical `runId/passId`. Retry, fallback and resume update that review; they do not create another one. Reports show complete, partial, failed, canceled and unfinished reviews, checked blocks, finding counts by severity and average duration of finished reviews. Duration is wall-clock time from the first execution, including pauses before resume. Findings that trigger `--fail-on` do not make a completed review technically failed. An abrupt process exit can leave an unfinished review with an unknown final outcome. Review statistics begin with this update; old token records cannot reconstruct them.
+
+Statistics are stored in `os.UserConfigDir()/marina-the-reviewer/stats.sqlite3`. On macOS this is `~/Library/Application Support/marina-the-reviewer/stats.sqlite3`. `MARINADOREVIEW_DB_FILE` selects another SQLite file, independently of `--config`. The parent directory must be private and owned by the current user; newly created application directories use `0700`, and database, lock and SQLite sidecar files use `0600`. No database is created for empty-history queries or offline commands. The database stores counts and request/review metadata without API keys, prompts, source code, finding text or model output. History is local; provider billing and other applications are not queried.
+
+History is retained for **90 days**. Expired rows are removed during storage access, with maintenance at most once per day. If the CLI is closed, cleanup runs on the next access. Free pages are reused and reclaimed incrementally; database size depends on activity within the retained window. This cleanup does not delete provider configurations, review output, or `review-run` files needed for resume.
+
+The old default `usage.jsonl` is imported once, retaining only the last 90 days of token history. Identical requests are not counted twice. A validated incomplete final fragment is excluded with a warning; corrupt complete records stop migration and preserve the source. The default journal is retired only after a verified import and an unchanged-file check. Explicitly selected external sources are preserved. Close older CLI versions before migration; concurrent old JSONL writers and new SQLite writers are not supported.
+
+The old `MARINADOREVIEW_USAGE_FILE` variable is deprecated: by itself it selects the import source, with the SQLite file created beside it as `<old-path>.sqlite3`. If both variables are set, `MARINADOREVIEW_DB_FILE` selects SQLite and the old variable selects the import source. A new database override alone does not import the personal default history. Update CI volumes and variables to retain the SQLite database.
+
+A recording failure leaves the review running and emits a stderr warning after the command or TUI closes. A failed statistics read returns an error rather than a report of zero usage. The JSON report retains its existing token fields and adds `reviews` to each period, `reviewTrackingSince` and `retentionDays`; Marina review document formats are unchanged.
 
 ## Prompts and task context
 

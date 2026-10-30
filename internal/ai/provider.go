@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -56,7 +57,7 @@ func IsRetryable(err error) bool {
 	return errors.As(err, &providerErr) && (providerErr.Code == "network_error" || providerErr.Code == "timeout" || providerErr.Code == "rate_limit" || providerErr.Code == "server_error")
 }
 
-func Complete(ctx context.Context, provider config.ProviderSnapshot, token string, input Request) (Response, error) {
+func Complete(ctx context.Context, provider config.ProviderSnapshot, token string, input Request) (result Response, callErr error) {
 	started := time.Now()
 	profile := provider.Profile
 	if input.MaximumOutputTokens < 1 || (profile.ContextLength > 0 && input.MaximumOutputTokens >= profile.ContextLength) {
@@ -88,6 +89,9 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	body := map[string]any{"model": profile.Model, "temperature": 0, "stream": profile.Stream,
 		parameter: input.MaximumOutputTokens, "response_format": responseFormat,
 		"messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": input.UserPrompt}}}
+	if usage.Enabled(ctx) && requestStreamUsage(profile) {
+		body["stream_options"] = map[string]bool{"include_usage": true}
+	}
 	for key, value := range profile.ExtraParameters {
 		if _, reserved := body[key]; reserved || strings.EqualFold(key, "authorization") || strings.EqualFold(key, "api_key") {
 			return Response{}, &Error{Code: "configuration", Message: "extra parameter overrides a protected request field"}
@@ -118,6 +122,8 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	finishUsage := usage.Begin(ctx, usageMetadata(provider, token))
+	defer func() { finishUsage(tokenCounts(result.Usage), usageStatus(callErr)) }()
 	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -131,6 +137,11 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(response.Body, 65536))
+		var value envelope
+		if json.Unmarshal(data, &value) == nil {
+			result.Usage = usageOf(value)
+		}
 		code := "request_rejected"
 		switch {
 		case response.StatusCode == 401 || response.StatusCode == 403:
@@ -142,20 +153,22 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		case response.StatusCode >= 300 && response.StatusCode < 400:
 			code = "configuration"
 		case response.StatusCode == 400 || response.StatusCode == 413:
-			data, _ := io.ReadAll(io.LimitReader(response.Body, 65536))
 			lower := strings.ToLower(string(data))
 			if strings.Contains(lower, "context_length") || strings.Contains(lower, "context window") || strings.Contains(lower, "context_length_exceeded") || strings.Contains(lower, "maximum context") {
 				code = "context_overflow"
 			}
 		}
-		return Response{}, &Error{Code: code, Message: fmt.Sprintf("provider returned HTTP %d", response.StatusCode), Status: response.StatusCode, RetryAfter: retryAfter(response.Header.Get("Retry-After"))}
+		return result, &Error{Code: code, Message: fmt.Sprintf("provider returned HTTP %d", response.StatusCode), Status: response.StatusCode, RetryAfter: retryAfter(response.Header.Get("Retry-After"))}
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBytes+1))
 	if err != nil {
-		if ctx.Err() != nil {
-			return Response{}, ctx.Err()
+		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") || bytes.HasPrefix(bytes.TrimSpace(data), []byte("data:")) {
+			_, _, _, result.Usage, _ = parseSSE(data)
 		}
-		return Response{}, &Error{Code: "network_error", Message: "provider response could not be read"}
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+		return result, &Error{Code: "network_error", Message: "provider response could not be read"}
 	}
 	if len(data) > maximumResponseBytes {
 		return Response{}, &Error{Code: "invalid_output", Message: "provider response exceeds the size limit"}
@@ -167,10 +180,11 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	} else {
 		content, reasoning, finish, usage, err = parseJSON(data)
 	}
+	result.Usage = usage
 	if err != nil {
-		return Response{}, &Error{Code: "invalid_output", Message: "provider completion envelope is invalid"}
+		return result, &Error{Code: "invalid_output", Message: "provider completion envelope is invalid"}
 	}
-	result := Response{Output: json.RawMessage(content), FinishReason: finish, Usage: usage, Elapsed: time.Since(started), Channel: "content"}
+	result = Response{Output: json.RawMessage(content), FinishReason: finish, Usage: usage, Elapsed: time.Since(started), Channel: "content"}
 	if finish == "length" || finish == "max_tokens" {
 		return result, &Error{Code: "output_truncated", Message: "provider output token limit was reached", Partial: &result}
 	}
@@ -210,6 +224,12 @@ func chatEndpoint(base string) (string, error) {
 	return u.String(), nil
 }
 
+type tokenUsage struct {
+	PromptTokens     *int `json:"prompt_tokens"`
+	CompletionTokens *int `json:"completion_tokens"`
+	TotalTokens      *int `json:"total_tokens"`
+}
+
 type envelope struct {
 	Choices []struct {
 		Message struct {
@@ -223,15 +243,17 @@ type envelope struct {
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     *int `json:"prompt_tokens"`
-		CompletionTokens *int `json:"completion_tokens"`
-		TotalTokens      *int `json:"total_tokens"`
-	} `json:"usage"`
+	Usage *tokenUsage `json:"usage"`
+	Groq  *struct {
+		Usage *tokenUsage `json:"usage"`
+	} `json:"x_groq"`
 	Error json.RawMessage `json:"error"`
 }
 
 func usageOf(value envelope) Usage {
+	if value.Usage == nil && value.Groq != nil {
+		value.Usage = value.Groq.Usage
+	}
 	if value.Usage == nil {
 		return Usage{}
 	}
@@ -240,8 +262,11 @@ func usageOf(value envelope) Usage {
 
 func parseJSON(data []byte) (string, string, string, Usage, error) {
 	var value envelope
-	if err := json.Unmarshal(data, &value); err != nil || len(value.Choices) != 1 || (len(value.Error) != 0 && string(value.Error) != "null") {
+	if err := json.Unmarshal(data, &value); err != nil {
 		return "", "", "", Usage{}, errors.New("invalid completion")
+	}
+	if len(value.Choices) != 1 || (len(value.Error) != 0 && string(value.Error) != "null") {
+		return "", "", "", usageOf(value), errors.New("invalid completion")
 	}
 	choice := value.Choices[0]
 	if choice.Message.Refusal != "" {
@@ -266,11 +291,14 @@ func parseSSE(data []byte) (string, string, string, Usage, error) {
 			break
 		}
 		var value envelope
-		if json.Unmarshal([]byte(payload), &value) != nil || (len(value.Error) > 0 && string(value.Error) != "null") {
+		if json.Unmarshal([]byte(payload), &value) != nil {
 			return "", "", "", usage, errors.New("invalid stream event")
 		}
-		if value.Usage != nil {
+		if value.Usage != nil || value.Groq != nil && value.Groq.Usage != nil {
 			usage = usageOf(value)
+		}
+		if len(value.Error) > 0 && string(value.Error) != "null" {
+			return "", "", "", usage, errors.New("invalid stream event")
 		}
 		if len(value.Choices) > 0 {
 			content.WriteString(value.Choices[0].Delta.Content)

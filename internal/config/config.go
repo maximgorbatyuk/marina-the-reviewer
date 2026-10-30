@@ -191,7 +191,7 @@ func ResolveRouting(cfg Config, override Overrides) (Route, error) {
 	if err := cfg.Validate(); err != nil {
 		return Route{}, err
 	}
-	primary, err := snapshot(cfg, cfg.Routing.Primary)
+	primary, err := ResolveProfile(cfg, cfg.Routing.Primary)
 	if err != nil {
 		return Route{}, err
 	}
@@ -200,7 +200,7 @@ func ResolveRouting(cfg Config, override Overrides) (Route, error) {
 		route.FallbackOn = DefaultFallbackErrors()
 	}
 	if cfg.Routing.Fallback != "" {
-		backup, err := snapshot(cfg, cfg.Routing.Fallback)
+		backup, err := ResolveProfile(cfg, cfg.Routing.Fallback)
 		if err != nil {
 			return Route{}, err
 		}
@@ -241,7 +241,10 @@ func ResolveRouting(cfg Config, override Overrides) (Route, error) {
 	return route, nil
 }
 
-func snapshot(cfg Config, name string) (ProviderSnapshot, error) {
+func ResolveProfile(cfg Config, name string) (ProviderSnapshot, error) {
+	if _, ok := cfg.Profiles[name]; !ok {
+		return ProviderSnapshot{}, errors.New("provider profile does not exist")
+	}
 	profile := cfg.Profiles[name]
 	if err := normalize(&profile); err != nil {
 		return ProviderSnapshot{}, err
