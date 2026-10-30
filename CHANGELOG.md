@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Keep unrelated private files intact when a usage journal path is incorrect.
+
 ## 0.3.0
 
 - Record local API token usage for reviews, retries, fallback and connection tests.

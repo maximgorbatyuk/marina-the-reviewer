@@ -292,3 +292,19 @@ func TestDefaultUsagePathIsIndependentOfProviderConfig(t *testing.T) {
 		t.Fatal("config path moved usage storage")
 	}
 }
+
+func TestAppendPreservesAnUnrelatedPrivateFile(t *testing.T) {
+	for _, body := range []string{"{\"version\":1,\"profiles\":{}}\n", "a-private-token-file\n", "{", "{\"version\":1,\"profiles\":{"} {
+		path := filepath.Join(t.TempDir(), "existing")
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := (Store{Path: path}).Append(event("one", "start", time.Now().UTC())); err == nil {
+			t.Fatal("unrelated file accepted as usage journal")
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != body {
+			t.Fatal("unrelated file changed")
+		}
+	}
+}

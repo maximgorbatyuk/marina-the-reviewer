@@ -149,7 +149,7 @@ The counters sum API-reported input, output and total tokens. If total is absent
 
 History is local to this machine and begins with this feature. Old review directories and other applications are not scanned, and provider account billing is not queried. The private journal is `os.UserConfigDir()/marina-the-reviewer/usage.jsonl`, independent of `--config`. `MARINADOREVIEW_USAGE_FILE` selects another file, including a persistent path in CI. Keep this file to retain history. New directories use `0700`, and the file uses `0600` with a writer lock. The journal contains request metadata and counts, without API keys, prompts, source code or model output.
 
-An unfinished last JSONL record is reported and repaired before the next append. Corrupt complete records cause an explicit report error. The journal has a 128 MiB limit; archive it and choose a fresh file before reaching that limit. A recording failure leaves the review running and emits a stderr warning after the command or TUI closes; its usage may be incomplete.
+An unfinished last JSONL record is reported and repaired before the next append when a preceding usage record can be validated. An incomplete first record or an unrelated file is preserved; archive it and select a fresh journal. Corrupt complete records cause an explicit report error. The journal has a 128 MiB limit; archive it and choose a fresh file before reaching that limit. A recording failure leaves the review running and emits a stderr warning after the command or TUI closes; its usage may be incomplete.
 
 ## Prompts and task context
 

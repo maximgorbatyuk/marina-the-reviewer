@@ -147,15 +147,22 @@ func repairTail(f *os.File) error {
 	if info.Size() == 0 {
 		return nil
 	}
-	offset := max(int64(0), info.Size()-maxRecordBytes-1)
+	offset := max(int64(0), info.Size()-2*maxRecordBytes-1)
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return errors.New("cannot read usage journal tail")
 	}
-	data, err := io.ReadAll(io.LimitReader(f, maxRecordBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, 2*maxRecordBytes+1))
 	if err != nil || len(data) == 0 {
 		return errors.New("cannot read usage journal tail")
 	}
 	if data[len(data)-1] == '\n' {
+		last := bytes.LastIndexByte(data[:len(data)-1], '\n')
+		if last < 0 && offset > 0 || len(data)-last-1 > maxRecordBytes {
+			return errors.New("usage journal tail exceeds the record size limit")
+		}
+		if _, err := decodeEvent(data[last+1 : len(data)-1]); err != nil {
+			return errors.New("usage journal has an invalid final record")
+		}
 		return nil
 	}
 	last := bytes.LastIndexByte(data, '\n')
@@ -163,6 +170,9 @@ func repairTail(f *os.File) error {
 		return errors.New("usage journal tail exceeds the record size limit")
 	}
 	fragment := data[last+1:]
+	if len(fragment) >= maxRecordBytes {
+		return errors.New("usage journal tail exceeds the record size limit")
+	}
 	if _, err := decodeEvent(fragment); err == nil {
 		if info.Size() >= maxLedgerBytes {
 			return errors.New("usage journal has reached 128 MiB")
@@ -174,6 +184,16 @@ func repairTail(f *os.File) error {
 		return err
 	} else if !errors.Is(err, io.ErrUnexpectedEOF) {
 		return errors.New("usage journal has a corrupt final record")
+	}
+	if last < 0 {
+		return errors.New("usage journal has an incomplete first record; preserve it and select a fresh journal")
+	}
+	previous := bytes.LastIndexByte(data[:last], '\n')
+	if previous < 0 && offset > 0 {
+		return errors.New("cannot validate usage journal before repairing its tail")
+	}
+	if _, err := decodeEvent(data[previous+1 : last]); err != nil {
+		return errors.New("cannot validate usage journal before repairing its tail")
 	}
 	if err := f.Truncate(offset + int64(last+1)); err != nil {
 		return errors.New("cannot repair incomplete usage journal tail")
