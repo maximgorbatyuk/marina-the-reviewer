@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
@@ -30,6 +31,7 @@ func TestExecutionArchiveKeepsRejectedTextAndUsageIdentity(t *testing.T) {
 	}))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
+	route.Primary.Profile.Provider = config.ProviderGroq
 	route.RuntimeSecrets = map[string]string{route.Primary.Name: secret}
 	plan, err := BuildDocument(document(), route, "", nil)
 	if err != nil {
@@ -78,6 +80,9 @@ func TestExecutionArchiveKeepsRejectedTextAndUsageIdentity(t *testing.T) {
 	}
 	ids := map[string]bool{}
 	for _, event := range snapshot.Events {
+		if event.ProviderKind != "groq" {
+			t.Fatal("review or correction lost the selected provider kind")
+		}
 		ids[event.ID] = true
 	}
 	if !ids[first.RequestID] || !ids[correction.RequestID] {

@@ -7,7 +7,7 @@ import (
 )
 
 const applicationID = 1296323158
-const schemaVersion = 2
+const schemaVersion = 3
 
 func supportedSchemaVersion(version int) bool { return version >= 1 && version <= schemaVersion }
 
@@ -22,6 +22,11 @@ ALTER TABLE api_requests ADD COLUMN response_complete INTEGER CHECK(response_com
 PRAGMA user_version=2;
 `
 
+const providerKindMigration = `
+ALTER TABLE api_requests ADD COLUMN provider_kind TEXT;
+PRAGMA user_version=3;
+`
+
 const schema = `
 CREATE TABLE api_requests (
  request_id TEXT PRIMARY KEY,
@@ -30,6 +35,7 @@ CREATE TABLE api_requests (
  started_at TEXT NOT NULL,
  provider_id TEXT NOT NULL,
  provider TEXT NOT NULL,
+ provider_kind TEXT,
  profile TEXT NOT NULL,
  model TEXT NOT NULL,
  operation TEXT NOT NULL,
@@ -64,7 +70,7 @@ CREATE TABLE review_runs (
 CREATE INDEX review_runs_started ON review_runs(started_at);
 CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 PRAGMA application_id=1296323158;
-PRAGMA user_version=2;
+PRAGMA user_version=3;
 `
 
 func initialize(ctx context.Context, db *sql.DB, empty bool) error {
@@ -96,29 +102,38 @@ func initialize(ctx context.Context, db *sql.DB, empty bool) error {
 	} else if id != applicationID || !supportedSchemaVersion(version) {
 		return errors.New("unsupported or unrelated statistics database")
 	}
-	for _, query := range []string{"SELECT " + eventColumns + " FROM api_requests LIMIT 0", "SELECT " + reviewColumns + " FROM review_runs LIMIT 0", "SELECT key,value FROM metadata LIMIT 0"} {
+	queries := []string{"SELECT " + baseEventColumns + " FROM api_requests LIMIT 0", "SELECT " + reviewColumns + " FROM review_runs LIMIT 0", "SELECT key,value FROM metadata LIMIT 0"}
+	if version >= 2 {
+		queries = append(queries, "SELECT "+payloadColumns+" FROM api_requests LIMIT 0")
+	}
+	for _, query := range queries {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
 			return errors.New("statistics schema does not match its version")
 		}
 		rows.Close()
 	}
-	if version == 1 {
+	if version == 1 || version == 2 {
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return errors.New("cannot start statistics schema migration")
 		}
 		defer tx.Rollback()
-		if _, err := tx.ExecContext(ctx, payloadMigration); err != nil {
-			return errors.New("cannot migrate statistics request payloads")
+		if version == 1 {
+			if _, err := tx.ExecContext(ctx, payloadMigration); err != nil {
+				return errors.New("cannot migrate statistics request payloads")
+			}
+		}
+		if _, err := tx.ExecContext(ctx, providerKindMigration); err != nil {
+			return errors.New("cannot migrate statistics provider kinds")
 		}
 		if err := tx.Commit(); err != nil {
 			return errors.New("cannot commit statistics schema migration")
 		}
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+payloadColumns+" FROM api_requests LIMIT 0")
+	rows, err := db.QueryContext(ctx, "SELECT "+eventColumns+","+payloadColumns+" FROM api_requests LIMIT 0")
 	if err != nil {
-		return errors.New("statistics payload schema does not match its version")
+		return errors.New("statistics request schema does not match its version")
 	}
 	rows.Close()
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=2000; PRAGMA wal_autocheckpoint=256"); err != nil {

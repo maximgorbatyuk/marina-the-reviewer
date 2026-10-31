@@ -50,7 +50,7 @@ func usageMetadata(provider config.ProviderSnapshot, token string) usage.Metadat
 		}
 		return value
 	}
-	return usage.Metadata{ProviderID: clean(root), Provider: clean(name), Profile: clean(provider.Name), Model: clean(provider.Profile.Model)}
+	return usage.Metadata{ProviderID: clean(root), Provider: clean(name), ProviderKind: string(provider.Profile.Provider), Profile: clean(provider.Name), Model: clean(provider.Profile.Model)}
 }
 
 func requestStreamUsage(profile config.Profile) bool {

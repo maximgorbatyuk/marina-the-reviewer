@@ -139,7 +139,7 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	}
 	secrets[token] = token
 	meta := usageMetadata(provider, token)
-	for _, value := range []*string{&meta.ProviderID, &meta.Provider, &meta.Profile, &meta.Model} {
+	for _, value := range []*string{&meta.ProviderID, &meta.Provider, &meta.ProviderKind, &meta.Profile, &meta.Model} {
 		*value = redact.Text(*value, secrets)
 	}
 	meta.RequestURL, meta.RequestPayload = redact.Text(endpoint, secrets), []byte(redact.Text(string(encoded), secrets))

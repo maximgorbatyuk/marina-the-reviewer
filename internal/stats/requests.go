@@ -25,6 +25,9 @@ func validEvent(e Event) error {
 			return errors.New("invalid usage event metadata")
 		}
 	}
+	if !validText(e.ProviderKind, false) {
+		return errors.New("invalid usage provider kind")
+	}
 	if !validText(e.RunID, false) || !validText(e.PassID, false) || (e.RunID == "") != (e.PassID == "") {
 		return errors.New("invalid usage review identity")
 	}
@@ -39,7 +42,8 @@ func validEvent(e Event) error {
 	return nil
 }
 
-const eventColumns = "request_id,kind,at,started_at,provider_id,provider,profile,model,operation,status,input_tokens,output_tokens,total_tokens,run_id,pass_id"
+const baseEventColumns = "request_id,kind,at,started_at,provider_id,provider,profile,model,operation,status,input_tokens,output_tokens,total_tokens,run_id,pass_id"
+const eventColumns = baseEventColumns + ",provider_kind"
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -47,11 +51,13 @@ func scanEvent(row rowScanner) (Event, error) {
 	var e Event
 	var at, started string
 	var input, output, total sql.NullInt64
-	err := row.Scan(&e.ID, &e.Kind, &at, &started, &e.ProviderID, &e.Provider, &e.Profile, &e.Model, &e.Operation, &e.Status, &input, &output, &total, &e.RunID, &e.PassID)
+	var providerKind sql.NullString
+	err := row.Scan(&e.ID, &e.Kind, &at, &started, &e.ProviderID, &e.Provider, &e.Profile, &e.Model, &e.Operation, &e.Status, &input, &output, &total, &e.RunID, &e.PassID, &providerKind)
 	if err != nil {
 		return e, err
 	}
 	e.Version = 1
+	e.ProviderKind = providerKind.String
 	e.At, err = parseStamp(at)
 	if err != nil {
 		return e, err
@@ -70,7 +76,7 @@ func scanEvent(row rowScanner) (Event, error) {
 	return e, validEvent(e)
 }
 func sameRequest(a, b Event) bool {
-	return a.StartedAt.Equal(b.StartedAt) && a.ProviderID == b.ProviderID && a.Provider == b.Provider && a.Profile == b.Profile && a.Model == b.Model && a.Operation == b.Operation && a.RunID == b.RunID && a.PassID == b.PassID
+	return a.StartedAt.Equal(b.StartedAt) && a.ProviderID == b.ProviderID && a.Provider == b.Provider && a.ProviderKind == b.ProviderKind && a.Profile == b.Profile && a.Model == b.Model && a.Operation == b.Operation && a.RunID == b.RunID && a.PassID == b.PassID
 }
 func appendEvent(ctx context.Context, tx *sql.Tx, e Event, now time.Time) error {
 	if e.StartedAt.Before(now.Add(-RetentionDays * 24 * time.Hour)) {
@@ -102,8 +108,8 @@ func appendEvent(ctx context.Context, tx *sql.Tx, e Event, now time.Time) error 
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return errors.New("cannot read statistics request")
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO api_requests (`+eventColumns+`,`+payloadColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-ON CONFLICT(request_id) DO UPDATE SET kind=excluded.kind,at=excluded.at,status=excluded.status,input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,total_tokens=excluded.total_tokens,response_payload=excluded.response_payload,http_status=excluded.http_status,response_complete=excluded.response_complete`, e.ID, e.Kind, stamp(e.At), stamp(e.StartedAt), e.ProviderID, e.Provider, e.Profile, e.Model, e.Operation, e.Status, e.Counts.Input, e.Counts.Output, e.Counts.Total, e.RunID, e.PassID, e.RequestURL, e.RequestPayload, e.ResponsePayload, e.HTTPStatus, e.ResponseComplete)
+	_, err = tx.ExecContext(ctx, `INSERT INTO api_requests (`+eventColumns+`,`+payloadColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(request_id) DO UPDATE SET kind=excluded.kind,at=excluded.at,status=excluded.status,input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,total_tokens=excluded.total_tokens,response_payload=excluded.response_payload,http_status=excluded.http_status,response_complete=excluded.response_complete`, e.ID, e.Kind, stamp(e.At), stamp(e.StartedAt), e.ProviderID, e.Provider, e.Profile, e.Model, e.Operation, e.Status, e.Counts.Input, e.Counts.Output, e.Counts.Total, e.RunID, e.PassID, sql.NullString{String: e.ProviderKind, Valid: e.ProviderKind != ""}, e.RequestURL, e.RequestPayload, e.ResponsePayload, e.HTTPStatus, e.ResponseComplete)
 	if err != nil {
 		return errors.New("cannot write statistics request")
 	}

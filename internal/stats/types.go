@@ -18,6 +18,7 @@ type Event struct {
 	StartedAt        time.Time `json:"startedAt"`
 	ProviderID       string    `json:"providerId"`
 	Provider         string    `json:"provider"`
+	ProviderKind     string    `json:"providerKind,omitempty"`
 	Profile          string    `json:"profile"`
 	Model            string    `json:"model"`
 	Operation        string    `json:"operation"`

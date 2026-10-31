@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,11 @@ func TestUsageCountsRetriesFallbackAndNotResume(t *testing.T) {
 	cfg, _ := routeFor(t, a.URL, b.URL)
 	profile := cfg.Profiles["primary"]
 	profile.MaximumAttempts = 2
+	profile.Provider = config.ProviderXiaomiMiMo
 	cfg.Profiles["primary"] = profile
+	fallback := cfg.Profiles["backup"]
+	fallback.Provider = config.ProviderDeepSeek
+	cfg.Profiles["backup"] = fallback
 	route, err := config.ResolveRouting(cfg, config.Overrides{})
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +40,8 @@ func TestUsageCountsRetriesFallbackAndNotResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	profile.Provider = config.ProviderOllama
+	cfg.Profiles["primary"] = profile
 	dir := t.TempDir()
 	path := filepath.Join(dir, "stats", "stats.sqlite3")
 	runDir := filepath.Join(dir, "run")
@@ -69,5 +76,29 @@ func TestUsageCountsRetriesFallbackAndNotResume(t *testing.T) {
 		if event.RunID != plan.RunID || event.PassID != plan.PassID {
 			t.Fatal("API attempt lost review identity")
 		}
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rows, err := db.Query("SELECT profile,provider_kind FROM api_requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var profile, kind string
+		if err := rows.Scan(&profile, &kind); err != nil {
+			t.Fatal(err)
+		}
+		if profile == "primary" && kind != "xiaomi-mimo" || profile == "backup" && kind != "deepseek" {
+			t.Fatal("request used the current config or primary kind instead of its saved provider")
+		}
+		counts[kind]++
+	}
+	if err := rows.Err(); err != nil || counts["xiaomi-mimo"] != 2 || counts["deepseek"] != 1 {
+		t.Fatalf("retry, fallback or resume lost provider kinds: %+v %v", counts, err)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
@@ -67,9 +68,10 @@ func TestDatabaseKeepsProviderExchange(t *testing.T) {
 				defer db.Close()
 				var saved []byte
 				var complete sql.NullBool
-				if err := db.QueryRow("SELECT request_payload,response_complete FROM api_requests WHERE request_id='physical-attempt'").Scan(&saved, &complete); err != nil {
+				var selectedKind string
+				if err := db.QueryRow("SELECT request_payload,response_complete,provider_kind FROM api_requests WHERE request_id='physical-attempt'").Scan(&saved, &complete, &selectedKind); err != nil {
 					t.Error("request was not saved before sending:", err)
-				} else if complete.Valid || scenario != "redacted" && scenario != "all-provider-keys" && !bytes.Equal(saved, requestBytes) {
+				} else if selectedKind != "groq" || complete.Valid || scenario != "redacted" && scenario != "all-provider-keys" && !bytes.Equal(saved, requestBytes) {
 					t.Error("started request changed its payload or claimed a response")
 				}
 				if scenario == "no-headers" {
@@ -92,6 +94,7 @@ func TestDatabaseKeepsProviderExchange(t *testing.T) {
 				input.RedactionSecrets = map[string]string{"current-provider": "secondary-private-token"}
 			}
 			snapshot := provider(server.URL, scenario == "sse" || scenario == "large-sse")
+			snapshot.Profile.Provider = config.ProviderGroq
 			if scenario == "no-headers" {
 				snapshot.Profile.TimeoutSeconds = 1
 			}
@@ -112,14 +115,14 @@ func TestDatabaseKeepsProviderExchange(t *testing.T) {
 			}
 			defer db.Close()
 			var requestBody, responseBody []byte
-			var url, profile, model, providerName string
+			var url, profile, model, providerName, selectedKind string
 			var httpStatus int
 			var complete sql.NullBool
-			if err := db.QueryRow("SELECT request_url,request_payload,response_payload,http_status,response_complete,profile,model,provider FROM api_requests WHERE request_id='physical-attempt'").Scan(&url, &requestBody, &responseBody, &httpStatus, &complete, &profile, &model, &providerName); err != nil {
+			if err := db.QueryRow("SELECT request_url,request_payload,response_payload,http_status,response_complete,profile,model,provider,provider_kind FROM api_requests WHERE request_id='physical-attempt'").Scan(&url, &requestBody, &responseBody, &httpStatus, &complete, &profile, &model, &providerName, &selectedKind); err != nil {
 				t.Fatal(err)
 			}
 			requestBytes := <-received
-			if url != server.URL+"/v1/chat/completions" || profile != "test" || model != "model" || providerName == "" {
+			if selectedKind != "groq" || url != server.URL+"/v1/chat/completions" || profile != "test" || model != "model" || providerName == "" {
 				t.Fatal("provider identity or response state was lost")
 			}
 			if scenario == "no-headers" {

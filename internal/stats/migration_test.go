@@ -2,12 +2,15 @@ package stats
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func versionOneDatabase(t *testing.T, s Store) *sql.DB {
+const historicalRequestColumns = "request_id,kind,at,started_at,provider_id,provider,profile,model,operation,status,input_tokens,output_tokens,total_tokens,run_id,pass_id"
+
+func historicalDatabase(t *testing.T, s Store, version int) *sql.DB {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0700); err != nil {
 		t.Fatal(err)
@@ -20,7 +23,7 @@ func versionOneDatabase(t *testing.T, s Store) *sql.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	fixture, err := os.ReadFile("testdata/schema-v1.sql")
+	fixture, err := os.ReadFile(fmt.Sprintf("testdata/schema-v%d.sql", version))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +35,8 @@ func versionOneDatabase(t *testing.T, s Store) *sql.DB {
 
 func TestVersionOneMigrationPreservesHistory(t *testing.T) {
 	s := testStore(t)
-	db := versionOneDatabase(t, s)
-	if _, err := db.Exec("INSERT INTO api_requests ("+eventColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", "old", "finish", stamp(fixedTime()), stamp(fixedTime()), "provider-id", "Example", "cloud", "old-model", "review", "success", 4, 2, 6, "run", "pass"); err != nil {
+	db := historicalDatabase(t, s, 1)
+	if _, err := db.Exec("INSERT INTO api_requests ("+historicalRequestColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", "old", "finish", stamp(fixedTime()), stamp(fixedTime()), "provider-id", "Example", "cloud", "old-model", "review", "success", 4, 2, 6, "run", "pass"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec("INSERT INTO review_runs VALUES(?,?,?,?,?,?,?,?,?,?)", "run", "pass", "plan", stamp(fixedTime()), nil, "unfinished", 1, 0, 0, 0); err != nil {
@@ -50,7 +53,7 @@ func TestVersionOneMigrationPreservesHistory(t *testing.T) {
 	var url string
 	var request, response []byte
 	var complete sql.NullBool
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
 		t.Fatalf("schema was not upgraded: %d %v", version, err)
 	}
 	if err := db.QueryRow("SELECT request_url,request_payload,response_payload,http_status,response_complete FROM api_requests WHERE request_id='old'").Scan(&url, &request, &response, &status, &complete); err != nil || url != "" || request != nil || response != nil || status != 0 || complete.Valid {
@@ -66,7 +69,7 @@ func TestVersionOneMigrationPreservesHistory(t *testing.T) {
 
 func TestVersionOneMigrationRollsBackAndCanBeRetried(t *testing.T) {
 	s := testStore(t)
-	db := versionOneDatabase(t, s)
+	db := historicalDatabase(t, s, 1)
 	if _, err := db.Exec("ALTER TABLE api_requests ADD COLUMN response_payload BLOB"); err != nil {
 		t.Fatal(err)
 	}

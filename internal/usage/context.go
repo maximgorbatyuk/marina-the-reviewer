@@ -10,9 +10,9 @@ import (
 )
 
 type Metadata struct {
-	ProviderID, Provider, Profile, Model string
-	RequestURL                           string
-	RequestPayload                       []byte
+	ProviderID, Provider, ProviderKind, Profile, Model string
+	RequestURL                                         string
+	RequestPayload                                     []byte
 }
 
 type Response struct {
@@ -127,7 +127,7 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string, Response) {
 		operation = "ai"
 	}
 	now := time.Now().UTC()
-	e := Event{Version: 1, ID: requestID, Kind: "start", At: now, StartedAt: now, ProviderID: meta.ProviderID, Provider: meta.Provider, Profile: meta.Profile, Model: meta.Model, Operation: operation}
+	e := Event{Version: 1, ID: requestID, Kind: "start", At: now, StartedAt: now, ProviderID: meta.ProviderID, Provider: meta.Provider, ProviderKind: meta.ProviderKind, Profile: meta.Profile, Model: meta.Model, Operation: operation}
 	e.RequestURL, e.RequestPayload = meta.RequestURL, meta.RequestPayload
 	if review, ok := ctx.Value(reviewKey).(reviewIdentity); ok {
 		e.RunID, e.PassID = review.runID, review.passID
