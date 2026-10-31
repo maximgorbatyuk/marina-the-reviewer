@@ -11,20 +11,25 @@ type Counts struct {
 }
 
 type Event struct {
-	Version    int       `json:"version"`
-	ID         string    `json:"requestId"`
-	Kind       string    `json:"kind"`
-	At         time.Time `json:"at"`
-	StartedAt  time.Time `json:"startedAt"`
-	ProviderID string    `json:"providerId"`
-	Provider   string    `json:"provider"`
-	Profile    string    `json:"profile"`
-	Model      string    `json:"model"`
-	Operation  string    `json:"operation"`
-	Status     string    `json:"status,omitempty"`
-	Counts     Counts    `json:"usage"`
-	RunID      string    `json:"runId,omitempty"`
-	PassID     string    `json:"passId,omitempty"`
+	Version          int       `json:"version"`
+	ID               string    `json:"requestId"`
+	Kind             string    `json:"kind"`
+	At               time.Time `json:"at"`
+	StartedAt        time.Time `json:"startedAt"`
+	ProviderID       string    `json:"providerId"`
+	Provider         string    `json:"provider"`
+	Profile          string    `json:"profile"`
+	Model            string    `json:"model"`
+	Operation        string    `json:"operation"`
+	Status           string    `json:"status,omitempty"`
+	Counts           Counts    `json:"usage"`
+	RunID            string    `json:"runId,omitempty"`
+	PassID           string    `json:"passId,omitempty"`
+	RequestURL       string    `json:"-"`
+	RequestPayload   []byte    `json:"-"`
+	ResponsePayload  []byte    `json:"-"`
+	HTTPStatus       int       `json:"-"`
+	ResponseComplete *bool     `json:"-"`
 }
 
 type Review struct {

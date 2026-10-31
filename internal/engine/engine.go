@@ -549,7 +549,7 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 			if err = store.Write(s); err != nil {
 				return Result{}, err
 			}
-			response, callErr := ai.Complete(usage.WithRequestID(ctx, requestID), provider, token, ai.Request{SystemPrompt: w.Prepared.SystemPrompt, UserPrompt: user, Schema: review.ResponseSchema(), MaximumOutputTokens: w.Prepared.MaximumOutputTokens,
+			response, callErr := ai.Complete(usage.WithRequestID(ctx, requestID), provider, token, ai.Request{SystemPrompt: w.Prepared.SystemPrompt, UserPrompt: user, Schema: review.ResponseSchema(), MaximumOutputTokens: w.Prepared.MaximumOutputTokens, RedactionSecrets: tokens,
 				OnPrepared: func(endpoint string, payload []byte) error {
 					s.ArchiveAttempts[archiveIndex].Endpoint = redactText(endpoint, tokens)
 					s.ArchiveAttempts[archiveIndex].RequestPayload = redactText(string(payload), tokens)

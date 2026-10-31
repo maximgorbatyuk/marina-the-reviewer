@@ -15,11 +15,10 @@ import (
 	"time"
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/redact"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
-
-const maximumResponseBytes = 16 << 20
 
 type Request struct {
 	SystemPrompt        string
@@ -27,6 +26,7 @@ type Request struct {
 	Schema              json.RawMessage
 	MaximumOutputTokens int
 	OnPrepared          func(string, []byte) error
+	RedactionSecrets    map[string]string
 }
 
 type Usage struct {
@@ -133,8 +133,24 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	finishUsage := usage.Begin(ctx, usageMetadata(provider, token))
-	defer func() { finishUsage(tokenCounts(result.Usage), usageStatus(callErr)) }()
+	secrets := make(map[string]string, len(input.RedactionSecrets)+1)
+	for _, value := range input.RedactionSecrets {
+		secrets[value] = value
+	}
+	secrets[token] = token
+	meta := usageMetadata(provider, token)
+	for _, value := range []*string{&meta.ProviderID, &meta.Provider, &meta.Profile, &meta.Model} {
+		*value = redact.Text(*value, secrets)
+	}
+	meta.RequestURL, meta.RequestPayload = redact.Text(endpoint, secrets), []byte(redact.Text(string(encoded), secrets))
+	finishUsage := usage.Begin(ctx, meta)
+	var recorded usage.Response
+	defer func() {
+		if recorded.Complete != nil {
+			recorded.Payload = []byte(redact.Text(result.ResponsePayload, secrets))
+		}
+		finishUsage(tokenCounts(result.Usage), usageStatus(callErr), recorded)
+	}()
 	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -151,15 +167,12 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		return Response{}, &Error{Code: code, Message: message}
 	}
 	defer response.Body.Close()
+	data, readErr := io.ReadAll(response.Body)
+	complete := readErr == nil
+	recorded.HTTPStatus, recorded.Complete = response.StatusCode, &complete
+	result.ResponsePayload, result.ResponsePayloadTruncated = string(data), !complete
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		data, readErr := io.ReadAll(io.LimitReader(response.Body, 65537))
-		result.ResponsePayloadTruncated = readErr != nil
-		if len(data) > 65536 {
-			result.ResponsePayloadTruncated = true
-			data = data[:65536]
-		}
 		result.RawResponse = string(data)
-		result.ResponsePayload = string(data)
 		var value envelope
 		if json.Unmarshal(data, &value) == nil {
 			result.Usage = usageOf(value)
@@ -182,8 +195,7 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		}
 		return result, &Error{Code: code, Message: fmt.Sprintf("provider returned HTTP %d", response.StatusCode), Status: response.StatusCode, RetryAfter: retryAfter(response.Header.Get("Retry-After"))}
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBytes+1))
-	if err != nil {
+	if readErr != nil {
 		result.RawResponse = string(data)
 		result.ResponsePayload = string(data)
 		result.ResponsePayloadTruncated = true
@@ -204,11 +216,6 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 			return result, &Error{Code: "timeout", Message: message}
 		}
 		return result, &Error{Code: "network_error", Message: "provider response could not be read"}
-	}
-	if len(data) > maximumResponseBytes {
-		result.RawResponse = string(data[:maximumResponseBytes])
-		result.ResponsePayload, result.ResponsePayloadTruncated = result.RawResponse, true
-		return result, &Error{Code: "invalid_output", Message: "provider response exceeds the size limit"}
 	}
 	var content, reasoning, finish string
 	var usage Usage
@@ -321,7 +328,7 @@ func parseSSE(data []byte) (string, string, string, Usage, error) {
 	var finish string
 	var usage Usage
 	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 65536), maximumResponseBytes)
+	scanner.Buffer(make([]byte, min(65536, len(data)+1)), len(data)+1)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {

@@ -7,7 +7,20 @@ import (
 )
 
 const applicationID = 1296323158
-const schemaVersion = 1
+const schemaVersion = 2
+
+func supportedSchemaVersion(version int) bool { return version >= 1 && version <= schemaVersion }
+
+const payloadColumns = "request_url,request_payload,response_payload,http_status,response_complete"
+
+const payloadMigration = `
+ALTER TABLE api_requests ADD COLUMN request_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE api_requests ADD COLUMN request_payload BLOB;
+ALTER TABLE api_requests ADD COLUMN response_payload BLOB;
+ALTER TABLE api_requests ADD COLUMN http_status INTEGER NOT NULL DEFAULT 0 CHECK(http_status=0 OR http_status BETWEEN 100 AND 599);
+ALTER TABLE api_requests ADD COLUMN response_complete INTEGER CHECK(response_complete IN (0,1));
+PRAGMA user_version=2;
+`
 
 const schema = `
 CREATE TABLE api_requests (
@@ -25,7 +38,12 @@ CREATE TABLE api_requests (
  output_tokens INTEGER CHECK(output_tokens >= 0),
  total_tokens INTEGER CHECK(total_tokens >= 0),
  run_id TEXT NOT NULL,
- pass_id TEXT NOT NULL
+ pass_id TEXT NOT NULL,
+ request_url TEXT NOT NULL DEFAULT '',
+ request_payload BLOB,
+ response_payload BLOB,
+ http_status INTEGER NOT NULL DEFAULT 0 CHECK(http_status=0 OR http_status BETWEEN 100 AND 599),
+ response_complete INTEGER CHECK(response_complete IN (0,1))
 );
 CREATE INDEX api_requests_started ON api_requests(started_at);
 CREATE INDEX api_requests_provider_started ON api_requests(provider_id, started_at);
@@ -46,7 +64,7 @@ CREATE TABLE review_runs (
 CREATE INDEX review_runs_started ON review_runs(started_at);
 CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 PRAGMA application_id=1296323158;
-PRAGMA user_version=1;
+PRAGMA user_version=2;
 `
 
 func initialize(ctx context.Context, db *sql.DB, empty bool) error {
@@ -75,7 +93,7 @@ func initialize(ctx context.Context, db *sql.DB, empty bool) error {
 		if err := tx.Commit(); err != nil {
 			return errors.New("cannot commit statistics schema")
 		}
-	} else if id != applicationID || version != schemaVersion {
+	} else if id != applicationID || !supportedSchemaVersion(version) {
 		return errors.New("unsupported or unrelated statistics database")
 	}
 	for _, query := range []string{"SELECT " + eventColumns + " FROM api_requests LIMIT 0", "SELECT " + reviewColumns + " FROM review_runs LIMIT 0", "SELECT key,value FROM metadata LIMIT 0"} {
@@ -85,6 +103,24 @@ func initialize(ctx context.Context, db *sql.DB, empty bool) error {
 		}
 		rows.Close()
 	}
+	if version == 1 {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return errors.New("cannot start statistics schema migration")
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, payloadMigration); err != nil {
+			return errors.New("cannot migrate statistics request payloads")
+		}
+		if err := tx.Commit(); err != nil {
+			return errors.New("cannot commit statistics schema migration")
+		}
+	}
+	rows, err := db.QueryContext(ctx, "SELECT "+payloadColumns+" FROM api_requests LIMIT 0")
+	if err != nil {
+		return errors.New("statistics payload schema does not match its version")
+	}
+	rows.Close()
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=2000; PRAGMA wal_autocheckpoint=256"); err != nil {
 		return errors.New("cannot configure statistics database")
 	}

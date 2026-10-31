@@ -17,7 +17,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
-func TestUsageTracksInvalidOutputAndNoSecrets(t *testing.T) {
+func TestUsageTracksInvalidOutputWithoutExposingPayloadInReports(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 	r := usage.NewRecorder(path)
 	ctx := usage.WithRecorder(context.Background(), r)
@@ -41,9 +41,13 @@ func TestUsageTracksInvalidOutputAndNoSecrets(t *testing.T) {
 		t.Fatal("consumed tokens on invalid output lost")
 	}
 	data, _ := os.ReadFile(path)
-	for _, secret := range []string{"synthetic-private-value", "private-prompt", "private-source-code", "model-output-secret"} {
-		if strings.Contains(string(data), secret) {
-			t.Fatal("sensitive data in usage log")
+	if strings.Contains(string(data), "synthetic-private-value") {
+		t.Fatal("API key in usage database")
+	}
+	encoded, _ := json.Marshal(report)
+	for _, value := range []string{"private-prompt", "private-source-code", "model-output-secret"} {
+		if strings.Contains(string(encoded), value) {
+			t.Fatal("payload in usage report")
 		}
 	}
 }

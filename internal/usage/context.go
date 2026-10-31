@@ -9,7 +9,17 @@ import (
 	"time"
 )
 
-type Metadata struct{ ProviderID, Provider, Profile, Model string }
+type Metadata struct {
+	ProviderID, Provider, Profile, Model string
+	RequestURL                           string
+	RequestPayload                       []byte
+}
+
+type Response struct {
+	Payload    []byte
+	HTTPStatus int
+	Complete   *bool
+}
 type contextKey int
 
 const (
@@ -84,15 +94,15 @@ func (r *Recorder) remember(err error) {
 	}
 }
 
-func Begin(ctx context.Context, meta Metadata) func(Counts, string) {
+func Begin(ctx context.Context, meta Metadata) func(Counts, string, Response) {
 	r, _ := ctx.Value(recorderKey).(*Recorder)
 	if r == nil {
-		return func(Counts, string) {}
+		return func(Counts, string, Response) {}
 	}
 	r.mu.Lock()
 	if r.closed {
 		r.mu.Unlock()
-		return func(Counts, string) {}
+		return func(Counts, string, Response) {}
 	}
 	r.pending.Add(1)
 	r.mu.Unlock()
@@ -100,7 +110,7 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string) {
 	if err != nil {
 		r.remember(err)
 		r.pending.Done()
-		return func(Counts, string) {}
+		return func(Counts, string, Response) {}
 	}
 	requestID, _ := ctx.Value(requestKey).(string)
 	if requestID == "" {
@@ -108,7 +118,7 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string) {
 		if _, err := rand.Read(bytes[:]); err != nil {
 			r.remember(errors.New("cannot create usage request identity"))
 			r.pending.Done()
-			return func(Counts, string) {}
+			return func(Counts, string, Response) {}
 		}
 		requestID = hex.EncodeToString(bytes[:])
 	}
@@ -118,18 +128,20 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string) {
 	}
 	now := time.Now().UTC()
 	e := Event{Version: 1, ID: requestID, Kind: "start", At: now, StartedAt: now, ProviderID: meta.ProviderID, Provider: meta.Provider, Profile: meta.Profile, Model: meta.Model, Operation: operation}
+	e.RequestURL, e.RequestPayload = meta.RequestURL, meta.RequestPayload
 	if review, ok := ctx.Value(reviewKey).(reviewIdentity); ok {
 		e.RunID, e.PassID = review.runID, review.passID
 	}
 	r.remember(store.Append(e))
 	var once sync.Once
-	return func(counts Counts, status string) {
+	return func(counts Counts, status string, response Response) {
 		once.Do(func() {
 			defer r.pending.Done()
 			e.Kind = "finish"
 			e.At = time.Now().UTC()
 			e.Counts = counts
 			e.Status = status
+			e.ResponsePayload, e.HTTPStatus, e.ResponseComplete = response.Payload, response.HTTPStatus, response.Complete
 			r.remember(store.Append(e))
 		})
 	}

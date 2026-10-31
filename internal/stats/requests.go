@@ -33,6 +33,9 @@ func validEvent(e Event) error {
 			return errors.New("invalid usage token counter")
 		}
 	}
+	if e.HTTPStatus != 0 && (e.HTTPStatus < 100 || e.HTTPStatus > 599) || e.Kind == "start" && (e.ResponsePayload != nil || e.ResponseComplete != nil || e.HTTPStatus != 0) {
+		return errors.New("invalid usage response metadata")
+	}
 	return nil
 }
 
@@ -78,9 +81,18 @@ func appendEvent(ctx context.Context, tx *sql.Tx, e Event, now time.Time) error 
 		if !sameRequest(previous, e) {
 			return errors.New("statistics contain conflicting request identities")
 		}
+		var samePayload bool
+		if err := tx.QueryRowContext(ctx, "SELECT request_url=? AND request_payload IS ? FROM api_requests WHERE request_id=?", e.RequestURL, e.RequestPayload, e.ID).Scan(&samePayload); err != nil || !samePayload {
+			return errors.New("statistics contain conflicting request payloads")
+		}
 		if previous.Kind == "finish" {
 			if e.Kind == "finish" && (previous.Status != e.Status || !reflect.DeepEqual(previous.Counts, e.Counts)) {
 				return errors.New("statistics contain conflicting request results")
+			}
+			if e.Kind == "finish" {
+				if err := tx.QueryRowContext(ctx, "SELECT response_payload IS ? AND http_status=? AND response_complete IS ? FROM api_requests WHERE request_id=?", e.ResponsePayload, e.HTTPStatus, e.ResponseComplete, e.ID).Scan(&samePayload); err != nil || !samePayload {
+					return errors.New("statistics contain conflicting response payloads")
+				}
 			}
 			return nil
 		}
@@ -90,8 +102,8 @@ func appendEvent(ctx context.Context, tx *sql.Tx, e Event, now time.Time) error 
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return errors.New("cannot read statistics request")
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO api_requests (`+eventColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-ON CONFLICT(request_id) DO UPDATE SET kind=excluded.kind,at=excluded.at,status=excluded.status,input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,total_tokens=excluded.total_tokens`, e.ID, e.Kind, stamp(e.At), stamp(e.StartedAt), e.ProviderID, e.Provider, e.Profile, e.Model, e.Operation, e.Status, e.Counts.Input, e.Counts.Output, e.Counts.Total, e.RunID, e.PassID)
+	_, err = tx.ExecContext(ctx, `INSERT INTO api_requests (`+eventColumns+`,`+payloadColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(request_id) DO UPDATE SET kind=excluded.kind,at=excluded.at,status=excluded.status,input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,total_tokens=excluded.total_tokens,response_payload=excluded.response_payload,http_status=excluded.http_status,response_complete=excluded.response_complete`, e.ID, e.Kind, stamp(e.At), stamp(e.StartedAt), e.ProviderID, e.Provider, e.Profile, e.Model, e.Operation, e.Status, e.Counts.Input, e.Counts.Output, e.Counts.Total, e.RunID, e.PassID, e.RequestURL, e.RequestPayload, e.ResponsePayload, e.HTTPStatus, e.ResponseComplete)
 	if err != nil {
 		return errors.New("cannot write statistics request")
 	}

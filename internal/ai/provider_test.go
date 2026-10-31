@@ -20,7 +20,7 @@ func provider(url string, stream bool) config.ProviderSnapshot {
 	return config.ProviderSnapshot{Name: "test", Profile: config.Profile{BaseURL: url + "/v1", Model: "model", ContextLength: 16000, TimeoutSeconds: 5, ResponseFormat: "json_object", OutputTokenParameter: "max_completion_tokens", Stream: stream}}
 }
 
-func TestHTTPErrorResponsePayloadTruncation(t *testing.T) {
+func TestHTTPErrorResponsePayloadIsCompleteUnlessTransportFails(t *testing.T) {
 	for status, code := range map[int]string{401: "authentication", 429: "rate_limit", 503: "server_error"} {
 		for _, tc := range []struct {
 			name, body string
@@ -29,7 +29,7 @@ func TestHTTPErrorResponsePayloadTruncation(t *testing.T) {
 		}{
 			{name: "complete", body: "complete body"},
 			{name: "unexpected-eof", body: "partial body", incomplete: true, truncated: true},
-			{name: "size-limit", body: strings.Repeat("x", 65537), truncated: true},
+			{name: "large-body", body: strings.Repeat("x", 65537)},
 		} {
 			t.Run(strconv.Itoa(status)+"/"+tc.name, func(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +45,7 @@ func TestHTTPErrorResponsePayloadTruncation(t *testing.T) {
 				if !errors.As(err, &failure) || failure.Code != code || failure.Status != status {
 					t.Fatalf("wrong HTTP error: %v", err)
 				}
-				if result.ResponsePayloadTruncated != tc.truncated || result.ResponsePayload != tc.body[:min(len(tc.body), 65536)] || result.RawResponse != result.ResponsePayload {
+				if result.ResponsePayloadTruncated != tc.truncated || result.ResponsePayload != tc.body || result.RawResponse != result.ResponsePayload {
 					t.Fatal("HTTP error payload has the wrong content or truncation flag")
 				}
 			})

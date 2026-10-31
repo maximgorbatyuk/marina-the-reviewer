@@ -167,7 +167,7 @@ func (s Store) open(write bool, now time.Time) (*session, error) {
 		if e != nil || string(header[:16]) != "SQLite format 3\x00" {
 			return fail(errors.New("statistics file is not a SQLite database"))
 		}
-		if binary.BigEndian.Uint32(header[68:72]) != applicationID || binary.BigEndian.Uint32(header[60:64]) != schemaVersion {
+		if binary.BigEndian.Uint32(header[68:72]) != applicationID || !supportedSchemaVersion(int(binary.BigEndian.Uint32(header[60:64]))) {
 			return fail(errors.New("unsupported or unrelated statistics database"))
 		}
 	}
