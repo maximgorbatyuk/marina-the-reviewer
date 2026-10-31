@@ -233,6 +233,11 @@ marinadoreview plan --input snapshot.json --system-prompt-file policy.txt --outp
 
 The baseline is Marina dev commit `acd37b498f1c9367b4044e8f9d5ad55b90617e59`, protocol v3, validation policy v2. Native documents include schema version, producer, baseline and schema digests.
 
+Response schema validation supports working directories with spaces and Unicode.
+It uses an absolute in-memory resource identifier, so local schema references do
+not depend on the process directory. Compilation failures retain their cause
+with configured credentials redacted.
+
 Offline validation accepts a `SignificantReviewPreparedBatch` plus raw model JSON or a `ReviewModelOutputArchive`:
 
 ```sh
@@ -260,7 +265,9 @@ See [compatibility notes](docs/compatibility.md) for tested parity and parser di
 
 ## Analysis limits
 
-Java uses a lexical parser, with ambiguous dependencies left unresolved. It does not reproduce Marina AST symbol IDs, inherited/type-based overload resolution or move heuristics. Unsupported Java and non-Java source use explicit block fallbacks. Missing blobs, binary/LFS content and submodules produce limitations and incomplete coverage when source is unavailable.
+Java uses a lexical parser, with ambiguous dependencies left unresolved. It does not reproduce Marina AST symbol IDs, inherited/type-based overload resolution or move heuristics. Go uses the standard Go AST parser and a pinned local package index to select functions, receiver methods, types, values and direct dependencies. Both revisions include unchanged local Go source and module/workspace metadata; analysis does not run the reviewed project's Go toolchain or download dependencies. See [Go analysis](docs/go-analysis.md) for scope and offline verification.
+
+Unsupported Java, malformed Go and other languages use explicit block fallbacks. Missing blobs, binary/LFS content and submodules produce limitations and incomplete coverage when source is unavailable.
 
 Token counts are conservative estimates, not provider tokenizer results. Planning reserves schema/output/safety capacity, and bounded replanning handles server context rejection. Large splits preserve primary lines without guessing a base/head alignment. Codex and Claude process executors are outside this HTTP release.
 

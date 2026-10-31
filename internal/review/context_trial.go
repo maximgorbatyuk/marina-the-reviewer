@@ -184,7 +184,7 @@ func (index *contextIndex) normalizeTrial(batch Batch) Batch {
 			}
 		}
 		for _, source := range block.StructuralContext {
-			if index.document.SelectionVersion == 0 || !index.imports[contextKey(source)] {
+			if index.document.SelectionVersion == 0 || !index.imports[contextKey(source)] || isGoSource(source.Path) {
 				emit(source)
 				continue
 			}

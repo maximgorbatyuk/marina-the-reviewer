@@ -38,7 +38,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	command := args[0]
 	rest := args[1:]
 	if command == "capabilities" {
-		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "executionArchiveVersion": engine.ExecutionArchiveVersion, "reviewArtifactBundleVersion": engine.ReviewArtifactBundleVersion, "reviewResumeVersion": 1, "requestTimeoutOverrideVersion": 1, "providerIdentityVersion": 1, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
+		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "executionArchiveVersion": engine.ExecutionArchiveVersion, "reviewArtifactBundleVersion": engine.ReviewArtifactBundleVersion, "reviewResumeVersion": 1, "requestTimeoutOverrideVersion": 1, "providerIdentityVersion": 1, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "goAstAnalysis": true, "goDependencyContext": true, "sourceSelectionVersion": review.CurrentSelectionVersion, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
 	}
 	if command == "config" {
 		if len(rest) == 0 || rest[0] != "init" {

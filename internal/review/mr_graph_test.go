@@ -22,7 +22,7 @@ func TestMRGraphKeepsCallersAndDependenciesWithoutUnrelatedSource(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SelectionVersion != 2 {
+	if got.SelectionVersion != CurrentSelectionVersion {
 		t.Fatalf("new analysis did not pin the MR selection policy: %d", got.SelectionVersion)
 	}
 	if got.Graph.Sha256 != want.Graph.Sha256 {

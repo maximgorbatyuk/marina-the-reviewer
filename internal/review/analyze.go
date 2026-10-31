@@ -13,16 +13,6 @@ type javaToken struct {
 	text             string
 	start, end, line int
 }
-type javaSymbol struct {
-	node                                        GraphNode
-	key, content                                string
-	startToken, openToken, endToken, parameters int
-}
-type javaUnit struct {
-	key, kind string
-	source    CodeSlice
-	symbol    int
-}
 
 func sanitizeJava(s string) string {
 	value, _ := sanitizeJavaContext(context.Background(), s)
@@ -53,6 +43,14 @@ func Analyze(snapshot Snapshot) (Document, error) {
 func AnalyzeContext(ctx context.Context, snapshot Snapshot) (Document, error) {
 	return analyzeWithSelectionContext(ctx, snapshot, CurrentSelectionVersion)
 }
+
+// AnalyzeSelectionContext retains the source policy recorded by an unfinished bundle.
+func AnalyzeSelectionContext(ctx context.Context, snapshot Snapshot, selectionVersion int) (Document, error) {
+	if selectionVersion < 1 || selectionVersion > CurrentSelectionVersion {
+		return Document{}, fmt.Errorf("unsupported source selection version")
+	}
+	return analyzeWithSelectionContext(ctx, snapshot, selectionVersion)
+}
 func analyzeWithSelection(snapshot Snapshot, selectionVersion int) (Document, error) {
 	return analyzeWithSelectionContext(context.Background(), snapshot, selectionVersion)
 }
@@ -63,13 +61,25 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 	d := Document{Version: 3, ManifestSha256: snapshot.ManifestSha256, BaseSha: snapshot.BaseSha, StartSha: snapshot.StartSha, HeadSha: snapshot.HeadSha, Blocks: []Block{}, Graph: Graph{Nodes: []GraphNode{}, Edges: []GraphEdge{}, Limitations: []string{}}, Coverage: Coverage{IsComplete: snapshot.IsComplete, Exceptions: []string{}, ContextLines: []ChangeDisposition{}, ExcludedLines: []ChangeDisposition{}}, Limitations: append([]string{}, snapshot.Limitations...), DependencyContext: []CodeSlice{}, SelectionVersion: selectionVersion, DeclarationContext: []CodeSlice{}}
 	type fileAnalysis struct {
 		file    FileSnapshot
-		symbols []javaSymbol
-		units   []javaUnit
+		symbols []sourceSymbol
+		units   []sourceUnit
 	}
 	files := append([]FileSnapshot{}, snapshot.Files...)
 	slices.SortStableFunc(files, func(a, b FileSnapshot) int { return ordinalCompare(a.NewPath, b.NewPath) })
 	analyses := []fileAnalysis{}
-	allSymbols := []javaSymbol{}
+	var goAnalyzer *goSourceAnalyzer
+	if selectionVersion >= 3 {
+		var err error
+		goAnalyzer, err = newGoSourceAnalyzerContext(ctx, files)
+		if err != nil {
+			return Document{}, err
+		}
+		d.Graph.Limitations = append(d.Graph.Limitations, goAnalyzer.limitations...)
+		if len(goAnalyzer.ordered) > 0 {
+			d.Graph.Limitations = append(d.Graph.Limitations, "Go analysis resolves pinned local declarations conservatively. External source, runtime interface dispatch, reflection, embedded-method promotion and unknown function values are not proven; build variants use a source-union policy.")
+		}
+	}
+	allSymbols := []sourceSymbol{}
 	for _, f := range files {
 		if err := ctx.Err(); err != nil {
 			return Document{}, err
@@ -82,33 +92,19 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			if source == nil {
 				continue
 			}
-			if !strings.HasSuffix(strings.ToLower(source.Path), ".java") {
-				if selectionVersion >= 2 {
-					symbols, err := readLanguageNeutralFunctionsContext(ctx, *source)
-					if err != nil {
-						return Document{}, err
-					}
-					analysis.symbols = append(analysis.symbols, symbols...)
-					d.Graph.Limitations = append(d.Graph.Limitations, source.Path+": semantic Java resolution is unavailable; symbol ranges use the language-neutral fallback.")
-				}
+			var parser sourceAnalyzer = fallbackSourceAnalyzer{selectionVersion}
+			if strings.HasSuffix(strings.ToLower(source.Path), ".java") {
+				parser = javaSourceAnalyzer{selectionVersion}
+			} else if goAnalyzer != nil && isGoSource(source.Path) {
+				parser = goAnalyzer
+			} else if f.Operation == "context" && isGoMetadata(source.Path) {
 				continue
 			}
-			var syms []javaSymbol
-			var units []javaUnit
-			var limits []string
-			if selectionVersion >= 2 {
-				var err error
-				syms, units, limits, err = readMRJavaContext(ctx, *source)
-				if err != nil {
-					return Document{}, err
-				}
-			} else {
-				var err error
-				syms, units, limits, err = readJavaWithUnicodePolicyContext(ctx, *source, false)
-				if err != nil {
-					return Document{}, err
-				}
+			parsed, err := parser.parse(ctx, *source)
+			if err != nil {
+				return Document{}, err
 			}
+			syms, units, limits := parsed.symbols, parsed.units, parsed.limitations
 			offset := len(analysis.symbols)
 			for i := range units {
 				if err := ctx.Err(); err != nil {
@@ -155,7 +151,7 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			if err := ctx.Err(); err != nil {
 				return Document{}, err
 			}
-			if before.node.Kind != 4 || before.node.Revision != Base || before.node.CounterpartID != nil {
+			if goAnalyzer != nil && isGoSource(before.node.Path) || before.node.Kind != 4 || before.node.Revision != Base || before.node.CounterpartID != nil {
 				continue
 			}
 			candidates := []int{}
@@ -228,7 +224,7 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 		analyses = append(analyses, analysis)
 		allSymbols = append(allSymbols, analysis.symbols...)
 	}
-	slices.SortStableFunc(allSymbols, func(a, b javaSymbol) int {
+	slices.SortStableFunc(allSymbols, func(a, b sourceSymbol) int {
 		if n := ordinalCompare(a.node.Path, b.node.Path); n != 0 {
 			return n
 		}
@@ -275,6 +271,11 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 	parents, _, err := graphParentsContext(ctx, d.Graph.Nodes)
 	if err != nil {
 		return Document{}, err
+	}
+	if goAnalyzer != nil {
+		for child, parent := range goAnalyzer.parents {
+			parents[graphIDs[child]] = graphIDs[parent]
+		}
 	}
 	for _, n := range d.Graph.Nodes {
 		if err := ctx.Err(); err != nil {
@@ -334,7 +335,15 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 	var resolver *mrCallResolver
 	if selectionVersion >= 2 {
 		var err error
-		resolver, err = newMRCallResolverContext(ctx, allSymbols, files, graphIDs)
+		resolverSymbols := allSymbols
+		resolverFiles := files
+		if goAnalyzer != nil {
+			resolverSymbols = slices.DeleteFunc(append([]sourceSymbol{}, allSymbols...), func(symbol sourceSymbol) bool { return isGoSource(symbol.node.Path) })
+			resolverFiles = slices.DeleteFunc(append([]FileSnapshot{}, files...), func(file FileSnapshot) bool {
+				return isGoSource(file.NewPath) || isGoSource(file.OldPath) || isGoMetadata(file.NewPath)
+			})
+		}
+		resolver, err = newMRCallResolverContext(ctx, resolverSymbols, resolverFiles, graphIDs)
 		if err != nil {
 			return Document{}, err
 		}
@@ -344,7 +353,7 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 		if err := ctx.Err(); err != nil {
 			return Document{}, err
 		}
-		if s.node.Kind != 4 {
+		if s.node.Kind != 4 || goAnalyzer != nil && isGoSource(s.node.Path) {
 			continue
 		}
 		bodyOffset := 0
@@ -452,13 +461,35 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			addEdge(GraphEdge{Kind: "call", SourceID: graphIDs[s.node.SourceSymbolID], TargetIDs: targets, Revision: s.node.Revision, Line: &callLine, InvokedName: &nameCopy, ReceiverType: receiverPtr, Resolution: resolution, Change: change})
 		}
 	}
+	var goReferences map[*goDeclaration][]*goDeclaration
+	if goAnalyzer != nil {
+		edges, references, err := goAnalyzer.callGraph(ctx, graphIDs)
+		if err != nil {
+			return Document{}, err
+		}
+		goReferences = references
+		changes := map[string]int{}
+		for _, symbol := range allSymbols {
+			changes[graphIDs[symbol.node.SourceSymbolID]] = symbol.node.Change
+		}
+		for _, edge := range edges {
+			edge.Change = "added"
+			if edge.Revision == Base {
+				edge.Change = "removed"
+			}
+			if changes[edge.SourceID] == 0 {
+				edge.Change = "unchanged"
+			}
+			addEdge(edge)
+		}
+	}
 	if _, err := markUnchangedCallsContext(ctx, &d.Graph); err != nil {
 		return Document{}, err
 	}
 	relevantBodies := map[string]bool{}
 	if selectionVersion >= 2 {
 		var err error
-		d.Graph, graphIDs, relevantBodies, err = selectMRGraphContext(ctx, d.Graph, allSymbols)
+		d.Graph, graphIDs, relevantBodies, err = selectMRGraphContext(ctx, d.Graph, allSymbols, goRequiredSymbols(allSymbols, goReferences))
 		if err != nil {
 			return Document{}, err
 		}
@@ -520,6 +551,7 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			continue
 		}
 		java := strings.HasSuffix(strings.ToLower(f.NewPath), ".java")
+		parsedSource := java || goAnalyzer != nil && isGoSource(f.NewPath) && len(a.units) > 0
 		if java && f.Base != nil && f.Head != nil && strings.TrimRight(strings.ReplaceAll(f.Base.Content, "\r\n", "\n"), "\n") == strings.TrimRight(strings.ReplaceAll(f.Head.Content, "\r\n", "\n"), "\n") {
 			for _, ch := range changes {
 				if err := ctx.Err(); err != nil {
@@ -536,7 +568,7 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			v := sourceSlice(*s, 1, len(lines(s.Content)), true)
 			return &v
 		}
-		if !java || len(a.units) == 0 {
+		if !parsedSource || len(a.units) == 0 {
 			if !java && max(sourceLineCount(f.Base), sourceLineCount(f.Head)) > 200 && len(f.Hunks) > 0 {
 				for _, h := range f.Hunks {
 					if err := ctx.Err(); err != nil {
@@ -568,9 +600,17 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			}
 			continue
 		}
+		var goChanges *goChangedLineIndex
+		if goAnalyzer != nil && isGoSource(f.NewPath) {
+			var err error
+			goChanges, err = newGoChangedLineIndex(ctx, changes)
+			if err != nil {
+				return Document{}, err
+			}
+		}
 		firstBlock := len(d.Blocks)
 		unitKeys := []string{}
-		grouped := map[string][]javaUnit{}
+		grouped := map[string][]sourceUnit{}
 		shared := []CodeSlice{}
 		for _, u := range a.units {
 			if err := ctx.Err(); err != nil {
@@ -624,12 +664,16 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 				continue
 			}
 			changed := []ChangedLine{}
-			for _, ch := range changes {
-				if err := ctx.Err(); err != nil {
-					return Document{}, err
-				}
-				if within(ch, before, after) {
-					changed = append(changed, ch)
+			if goChanges != nil {
+				changed = goChanges.within(before, after)
+			} else {
+				for _, ch := range changes {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
+					if within(ch, before, after) {
+						changed = append(changed, ch)
+					}
 				}
 			}
 			if len(changed) == 0 {
@@ -708,6 +752,10 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			if rev == Head {
 				source = f.Head
 			}
+			var sourceLines []string
+			if source != nil {
+				sourceLines = lines(source.Content)
+			}
 			for _, ch := range changes {
 				if err := ctx.Err(); err != nil {
 					return Document{}, err
@@ -715,11 +763,11 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 				if ch.Revision != rev || owned[ch] {
 					continue
 				}
-				if source == nil || ch.Line < 1 || ch.Line > len(lines(source.Content)) {
+				if source == nil || ch.Line < 1 || ch.Line > len(sourceLines) {
 					d.Coverage.Exceptions = append(d.Coverage.Exceptions, fmt.Sprintf("%s:%d:%d: source line unavailable.", f.NewPath, rev, ch.Line))
 					continue
 				}
-				if strings.TrimSpace(lines(source.Content)[ch.Line-1]) == "" {
+				if strings.TrimSpace(sourceLines[ch.Line-1]) == "" {
 					d.Coverage.ExcludedLines = append(d.Coverage.ExcludedLines, ChangeDisposition{f.NewPath, rev, ch.Line, "Blank line outside a declaration."})
 					continue
 				}
@@ -738,7 +786,7 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 					end++
 				}
 				group := remaining[:end]
-				v := sourceSlice(*source, group[0], group[len(group)-1], false)
+				v := CodeSlice{Path: source.Path, Revision: source.Revision, StartLine: group[0], EndLine: group[len(group)-1], SymbolStartLine: group[0], SymbolEndLine: group[len(group)-1], Content: strings.Join(sourceLines[group[0]-1:group[len(group)-1]], "\n"), IsComplete: false}
 				changed := []ChangedLine{}
 				for _, line := range group {
 					if err := ctx.Err(); err != nil {
@@ -774,6 +822,11 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 					d.Blocks[i].StructuralContext = append(d.Blocks[i].StructuralContext, s)
 				}
 			}
+		}
+	}
+	if goAnalyzer != nil {
+		if err := goAnalyzer.decorateDocumentContext(ctx, &d, goReferences); err != nil {
+			return Document{}, err
 		}
 	}
 	for _, b := range d.Blocks {

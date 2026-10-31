@@ -347,7 +347,7 @@ func (index *contextIndex) selectImports(batch Batch) Batch {
 			if index.operationErr() != nil {
 				return Batch{}
 			}
-			if !isImports(s) {
+			if !isImports(s) || isGoSource(s.Path) {
 				ss = append(ss, s)
 			}
 		}
@@ -374,7 +374,7 @@ func (index *contextIndex) selectImports(batch Batch) Batch {
 			if index.operationErr() != nil {
 				return Batch{}
 			}
-			if !isImports(s) {
+			if !isImports(s) || isGoSource(s.Path) {
 				context = append(context, s)
 				continue
 			}

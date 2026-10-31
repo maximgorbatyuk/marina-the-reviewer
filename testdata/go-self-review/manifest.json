@@ -1,0 +1,34 @@
+{
+  "commit": "dbbffccbf61852e6af619268b0a2b109fc41c13a",
+  "files": {
+    "internal/review/dependency_priority.go": {
+      "sourceSha256": "39fd51c238e27b912a553779b1c63d0b634a0d8836f01c3427ecf30179a878af",
+      "fixtureSha256": "39fd51c238e27b912a553779b1c63d0b634a0d8836f01c3427ecf30179a878af",
+      "functions": null
+    },
+    "internal/review/cpu_context.go": {
+      "sourceSha256": "a0e35492cd34ef9fead058bc0cbeba903a4136f05358c9a027bb4390f9526382",
+      "fixtureSha256": "a0e35492cd34ef9fead058bc0cbeba903a4136f05358c9a027bb4390f9526382",
+      "functions": null
+    },
+    "internal/review/types.go": {
+      "sourceSha256": "bb8d695e2e2f76e739e8629758491259a2a1aa8036a3a7a7c455d53901134fc1",
+      "fixtureSha256": "bb8d695e2e2f76e739e8629758491259a2a1aa8036a3a7a7c455d53901134fc1",
+      "functions": null
+    },
+    "internal/review/analyze.go": {
+      "sourceSha256": "d13a72a024437e0fbf21aa8cee969723bcf02f3935e2d5db8f07c1744a5fa2d6",
+      "fixtureSha256": "1b4bc2cf503b657d7eade057bf750922b41220441906af3cbd526359c8921a7b",
+      "functions": [
+        "AnalyzeContext"
+      ]
+    },
+    "internal/engine/engine.go": {
+      "sourceSha256": "dfa9a77966699b0eb8f5ec9ac393427538c19520a8a3f668fee5b65ce0348227",
+      "fixtureSha256": "d9a8ac31f2bb18a832a9816230b3ffd316b57c9d123896b97933d5ab292bde2b",
+      "functions": [
+        "BuildContext"
+      ]
+    }
+  }
+}
