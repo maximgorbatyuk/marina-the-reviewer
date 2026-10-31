@@ -607,6 +607,11 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 				}
 				return finish(plan, s), ctx.Err()
 			}
+			delay := time.Duration(1<<(w.Attempts-1)) * 250 * time.Millisecond
+			if providerErr != nil && providerErr.RetryAfter > delay {
+				delay = min(providerErr.RetryAfter, 30*time.Second)
+			}
+			fallbackEligible := w.Role == "primary" && plan.Route.Fallback != nil && allowed(plan.Route.FallbackOn, code) && phase != "correction"
 			if (code == "invalid_output" || code == "output_truncated") && !w.RepairUsed && w.Prepared.OutputRecoveryEnabled {
 				raw := rawOutput
 				if token != "" {
@@ -648,13 +653,10 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 					break
 				}
 				w.Failure = "context_overflow: source could not be split within the replan limit"
-			} else if ai.IsRetryable(callErr) && w.Attempts < provider.Profile.MaximumAttempts && phase != "correction" {
+			} else if ai.IsRetryable(callErr) && w.Attempts < provider.Profile.MaximumAttempts && phase != "correction" &&
+				(!fallbackEligible || retryFitsDeadline(ctx, provider.Profile.TimeoutSeconds, delay)) {
 				if err = store.Write(s); err != nil {
 					return Result{}, err
-				}
-				delay := time.Duration(1<<(w.Attempts-1)) * 250 * time.Millisecond
-				if providerErr != nil && providerErr.RetryAfter > delay {
-					delay = min(providerErr.RetryAfter, 30*time.Second)
 				}
 				select {
 				case <-time.After(delay):
@@ -662,7 +664,7 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 				case <-ctx.Done():
 					return finish(plan, s), ctx.Err()
 				}
-			} else if w.Role == "primary" && plan.Route.Fallback != nil && allowed(plan.Route.FallbackOn, code) && phase != "correction" {
+			} else if fallbackEligible {
 				doc, scopeErr := scopeDocumentContext(ctx, plan.Document, w.Prepared)
 				if scopeErr != nil {
 					return finish(plan, s), scopeErr

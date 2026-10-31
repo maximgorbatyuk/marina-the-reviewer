@@ -13,6 +13,7 @@ import (
 )
 
 const DefaultContextLength = 1048576
+const DefaultRequestTimeoutSeconds = 3300
 
 type Config struct {
 	Version  int                `json:"version"`
@@ -27,6 +28,7 @@ type Routing struct {
 }
 
 type Profile struct {
+	Provider                  ProviderKind               `json:"provider,omitempty"`
 	Backend                   string                     `json:"backend"`
 	BaseURL                   string                     `json:"baseUrl"`
 	Model                     string                     `json:"model"`
@@ -63,9 +65,11 @@ type Route struct {
 }
 
 type Overrides struct {
+	Provider                                                         ProviderKind
 	Primary, Fallback, BaseURL, Model, APIKey, APIKeyEnv, APIKeyFile string
 	NoFallback                                                       bool
 	ContextLength, MaximumOutputTokens                               int
+	RequestTimeoutSeconds                                            int
 }
 
 func DefaultPath() (string, error) {
@@ -223,11 +227,23 @@ func ResolveRouting(cfg Config, override Overrides) (Route, error) {
 	if override.Model != "" {
 		route.Primary.Profile.Model = override.Model
 	}
+	if override.Provider != ProviderUnspecified {
+		route.Primary.Profile.Provider = override.Provider
+	}
 	if override.ContextLength != 0 {
 		route.Primary.Profile.ContextLength = override.ContextLength
 	}
 	if override.MaximumOutputTokens != 0 {
 		route.Primary.Profile.MaximumOutputTokens = override.MaximumOutputTokens
+	}
+	if override.RequestTimeoutSeconds != 0 {
+		if override.RequestTimeoutSeconds < 1 || override.RequestTimeoutSeconds > 86400 {
+			return Route{}, errors.New("invalid request timeout")
+		}
+		route.Primary.Profile.TimeoutSeconds = override.RequestTimeoutSeconds
+		if route.Fallback != nil {
+			route.Fallback.Profile.TimeoutSeconds = override.RequestTimeoutSeconds
+		}
 	}
 	if override.APIKey != "" {
 		route.Primary.Auth = SecretSource{Kind: "ephemeral"}
@@ -257,6 +273,10 @@ func freezeModelOutputBudget(profile *Profile) {
 	}
 	ceiling := 0
 	switch {
+	case profile.Provider == ProviderXiaomiMiMo:
+		ceiling = 131072
+	case profile.Provider == ProviderDeepSeek:
+		ceiling = 65536
 	case strings.HasPrefix(model, "mimo-"):
 		ceiling = 131072
 	case strings.HasPrefix(model, "deepseek-"):
@@ -346,11 +366,17 @@ func readSecretFile(path string) (string, error) {
 }
 
 func normalize(profile *Profile) error {
+	if _, err := ParseProviderKind(string(profile.Provider)); err != nil {
+		return err
+	}
 	if profile.Backend == "" {
 		profile.Backend = "openai-compatible"
 	}
 	if profile.Backend != "openai-compatible" {
 		return errors.New("unsupported backend")
+	}
+	if profile.BaseURL == "" && profile.Provider == ProviderXiaomiMiMo {
+		profile.BaseURL = XiaomiMiMoBaseURL
 	}
 	u, err := url.Parse(profile.BaseURL)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
@@ -389,7 +415,7 @@ func normalize(profile *Profile) error {
 		profile.MaximumConcurrentRequests = 1
 	}
 	if profile.TimeoutSeconds == 0 {
-		profile.TimeoutSeconds = 300
+		profile.TimeoutSeconds = DefaultRequestTimeoutSeconds
 	}
 	if profile.MaximumAttempts == 0 {
 		profile.MaximumAttempts = 2

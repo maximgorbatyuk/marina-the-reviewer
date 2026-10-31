@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/ai"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/engine"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
@@ -21,9 +22,11 @@ type arguments struct {
 	repo, base, start, head, baseSHA, startSHA, headSHA                           string
 	config, runDir, eventsFile, archiveOutput, systemPrompt, promptFile, taskFile string
 	profile, fallback, baseURL, model, apiKey, apiKeyEnv, apiKeyFile              string
+	provider                                                                      string
 	runID, passID, clusterID, failOn                                              string
 	noFallback, json                                                              bool
 	contextLength, maxOutput, batchIndex                                          int
+	requestTimeoutSeconds                                                         int
 	maxBytes                                                                      int64
 	artifactsDir                                                                  string
 	exportDir                                                                     string
@@ -35,7 +38,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	command := args[0]
 	rest := args[1:]
 	if command == "capabilities" {
-		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "executionArchiveVersion": engine.ExecutionArchiveVersion, "reviewArtifactBundleVersion": engine.ReviewArtifactBundleVersion, "reviewResumeVersion": 1, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
+		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "executionArchiveVersion": engine.ExecutionArchiveVersion, "reviewArtifactBundleVersion": engine.ReviewArtifactBundleVersion, "reviewResumeVersion": 1, "requestTimeoutOverrideVersion": 1, "providerIdentityVersion": 1, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
 	}
 	if command == "config" {
 		if len(rest) == 0 || rest[0] != "init" {
@@ -83,6 +86,14 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	if err != nil {
 		return 2
 	}
+	if a.requestTimeoutSeconds != 0 && (command != "plan" && command != "review" || a.requestTimeoutSeconds < 1 || a.requestTimeoutSeconds > 86400) {
+		fmt.Fprintln(errOut, "--request-timeout-seconds requires plan or review and a value from 1 to 86400")
+		return 2
+	}
+	if a.provider != "" && command != "plan" && command != "review" {
+		fmt.Fprintln(errOut, "--provider requires plan or review")
+		return 2
+	}
 	if a.artifactsDir != "" {
 		return executeBundle(ctx, command, a, in, out, errOut)
 	}
@@ -117,7 +128,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		fmt.Fprintln(errOut, "--fail-on must be warning, error or critical")
 		return 2
 	}
-	if command == "run" && (a.profile != "" || a.fallback != "" || a.noFallback || a.baseURL != "" || a.model != "" || a.contextLength != 0 || a.maxOutput != 0 || a.systemPrompt != "" || a.promptFile != "" || a.taskFile != "") {
+	if command == "run" && (a.provider != "" || a.profile != "" || a.fallback != "" || a.noFallback || a.baseURL != "" || a.model != "" || a.contextLength != 0 || a.maxOutput != 0 || a.systemPrompt != "" || a.promptFile != "" || a.taskFile != "") {
 		fmt.Fprintln(errOut, "run uses a fixed plan; use plan to change providers, routing, prompt or budgets")
 		return 2
 	}
@@ -455,6 +466,7 @@ func parseArguments(command string, args []string, errOut io.Writer) (arguments,
 	f.StringVar(&a.promptFile, "system-prompt-file", "", "review policy file")
 	f.StringVar(&a.taskFile, "task-file", "", "task context JSON file")
 	f.StringVar(&a.profile, "profile", "", "primary profile")
+	f.StringVar(&a.provider, "provider", "", "provider identity: openai, openrouter, xiaomi-mimo, deepseek, groq, ollama or openai-compatible")
 	f.StringVar(&a.fallback, "fallback-profile", "", "fallback profile")
 	f.BoolVar(&a.noFallback, "no-fallback", false, "disable fallback")
 	f.StringVar(&a.baseURL, "base-url", "", "primary API URL override")
@@ -464,6 +476,7 @@ func parseArguments(command string, args []string, errOut io.Writer) (arguments,
 	f.StringVar(&a.apiKeyFile, "api-key-file", "", "private primary API token file")
 	f.IntVar(&a.batchIndex, "batch", 0, "one-based prepared batch index for Marina export")
 	f.IntVar(&a.contextLength, "context-length", 0, "primary context limit")
+	f.IntVar(&a.requestTimeoutSeconds, "request-timeout-seconds", 0, "AI request timeout for primary and fallback; profile value or 3300 seconds by default")
 	f.IntVar(&a.maxOutput, "max-output-tokens", 0, "primary output limit")
 	f.StringVar(&a.runID, "run-id", "", "Marina run UUID")
 	f.StringVar(&a.passID, "pass-id", "", "Marina pass UUID")
@@ -515,17 +528,35 @@ func loadConfig(path string) (config.Config, error) {
 	return c, e
 }
 func routing(a arguments) (config.Config, config.Route, error) {
+	providerKind, e := config.ParseProviderKind(a.provider)
+	if e != nil {
+		return config.Config{}, config.Route{}, e
+	}
 	c, e := loadConfig(a.config)
 	if e != nil {
 		return c, config.Route{}, e
 	}
 	if c.Version == 0 {
-		if a.baseURL == "" || a.model == "" {
+		if a.model == "" {
 			return c, config.Route{}, errors.New("configure a provider or supply --base-url and --model")
 		}
-		c = config.Config{Version: 1, Routing: config.Routing{Primary: "request"}, Profiles: map[string]config.Profile{"request": {BaseURL: a.baseURL, Model: a.model, ContextLength: config.DefaultContextLength}}}
+		profile := config.Profile{BaseURL: a.baseURL, Model: a.model, ContextLength: config.DefaultContextLength}
+		for _, preset := range ai.Presets() {
+			if preset.Provider == providerKind {
+				profile = preset.Profile
+				profile.Model = a.model
+				if a.baseURL != "" {
+					profile.BaseURL = a.baseURL
+				}
+				break
+			}
+		}
+		if profile.BaseURL == "" {
+			return c, config.Route{}, errors.New("configure a provider URL or supply --base-url")
+		}
+		c = config.Config{Version: 1, Routing: config.Routing{Primary: "request"}, Profiles: map[string]config.Profile{"request": profile}}
 	}
-	r, e := config.ResolveRouting(c, config.Overrides{Primary: a.profile, Fallback: a.fallback, NoFallback: a.noFallback, BaseURL: a.baseURL, Model: a.model, APIKey: a.apiKey, APIKeyEnv: a.apiKeyEnv, APIKeyFile: a.apiKeyFile, ContextLength: a.contextLength, MaximumOutputTokens: a.maxOutput})
+	r, e := config.ResolveRouting(c, config.Overrides{Provider: providerKind, Primary: a.profile, Fallback: a.fallback, NoFallback: a.noFallback, BaseURL: a.baseURL, Model: a.model, APIKey: a.apiKey, APIKeyEnv: a.apiKeyEnv, APIKeyFile: a.apiKeyFile, ContextLength: a.contextLength, MaximumOutputTokens: a.maxOutput, RequestTimeoutSeconds: a.requestTimeoutSeconds})
 	return c, r, e
 }
 func loadPrompt(a arguments, read func(string) (json.RawMessage, error)) (string, error) {

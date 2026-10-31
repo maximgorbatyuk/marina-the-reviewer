@@ -116,7 +116,7 @@ func (m *model) startEditor(name string) {
 		p.APIKey, p.APIKeyEnv, p.APIKeyFile = original.APIKey, original.APIKeyEnv, original.APIKeyFile
 		preset = "Other OpenAI-compatible"
 		for _, candidate := range ai.Presets() {
-			if candidate.Profile.BaseURL != "" && strings.TrimRight(p.BaseURL, "/") == strings.TrimRight(candidate.Profile.BaseURL, "/") {
+			if p.Provider != config.ProviderUnspecified && candidate.Provider == p.Provider || p.Provider == config.ProviderUnspecified && candidate.Profile.BaseURL != "" && strings.TrimRight(p.BaseURL, "/") == strings.TrimRight(candidate.Profile.BaseURL, "/") {
 				preset = candidate.Name
 			}
 		}
@@ -156,7 +156,7 @@ func (m *model) startEditor(name string) {
 	e.focusField(fieldName)
 	m.editor = e
 	m.screen = editorScreen
-	m.notice = "Edit a draft. Apply, then save the configuration. Test uses AI tokens (up to 60s)."
+	m.notice = "Edit a draft. Apply, then save the configuration. Test uses AI tokens and the configured request timeout."
 	m.resize()
 }
 

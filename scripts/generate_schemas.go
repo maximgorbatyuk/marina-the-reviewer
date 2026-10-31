@@ -17,6 +17,13 @@ import (
 )
 
 func shape(t reflect.Type) map[string]any {
+	if t == reflect.TypeFor[config.ProviderKind]() {
+		return map[string]any{"type": "string", "enum": []config.ProviderKind{
+			config.ProviderUnspecified, config.ProviderOpenAI, config.ProviderOpenRouter,
+			config.ProviderXiaomiMiMo, config.ProviderDeepSeek, config.ProviderGroq,
+			config.ProviderOllama, config.ProviderOpenAICompatible,
+		}}
+	}
 	if t == reflect.TypeFor[time.Time]() {
 		return map[string]any{"type": "string", "format": "date-time"}
 	}

@@ -119,7 +119,7 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	}
 	timeout := time.Duration(profile.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
-		timeout = 5 * time.Minute
+		timeout = time.Duration(config.DefaultRequestTimeoutSeconds) * time.Second
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
