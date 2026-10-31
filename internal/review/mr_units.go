@@ -14,10 +14,6 @@ var mrFieldNamePattern = regexp.MustCompile(`([A-Za-z_$][\w$]*)\s*(?:\[\s*\])*\s
 var mrImportsPattern = regexp.MustCompile(`(?m)^\s*(?:package|import)\s+[^;]+;`)
 var mrNestedTypePattern = regexp.MustCompile(`\b(?:class|interface|record|enum)\s+([A-Za-z_$][\w$]*)`)
 
-func readMRJava(source SourceSnapshot) ([]javaSymbol, []javaUnit, []string) {
-	symbols, units, limits, _ := readMRJavaContext(context.Background(), source)
-	return symbols, units, limits
-}
 func readMRJavaContext(ctx context.Context, source SourceSnapshot) ([]javaSymbol, []javaUnit, []string, error) {
 	symbols, _, limitations, err := readJavaWithUnicodePolicyContext(ctx, source, true)
 	if err != nil {
@@ -196,10 +192,6 @@ func readMRJavaContext(ctx context.Context, source SourceSnapshot) ([]javaSymbol
 	return symbols, units, limitations, ctx.Err()
 }
 
-func mrJavaUnits(source SourceSnapshot, symbols []javaSymbol) []javaUnit {
-	units, _ := mrJavaUnitsContext(context.Background(), source, symbols)
-	return units
-}
 func mrJavaUnitsContext(ctx context.Context, source SourceSnapshot, symbols []javaSymbol) ([]javaUnit, error) {
 	content := strings.ReplaceAll(source.Content, "\r\n", "\n")
 	masked, err := sanitizeJavaContext(ctx, content)

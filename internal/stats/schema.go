@@ -89,7 +89,7 @@ func initialize(ctx context.Context, db *sql.DB, empty bool) error {
 		if err != nil {
 			return errors.New("cannot create statistics schema")
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 		if _, err := tx.ExecContext(ctx, "PRAGMA auto_vacuum=INCREMENTAL"); err != nil {
 			return errors.New("cannot configure statistics space reclamation")
 		}
@@ -107,18 +107,16 @@ func initialize(ctx context.Context, db *sql.DB, empty bool) error {
 		queries = append(queries, "SELECT "+payloadColumns+" FROM api_requests LIMIT 0")
 	}
 	for _, query := range queries {
-		rows, err := db.QueryContext(ctx, query)
-		if err != nil {
+		if err := checkSchemaProjection(ctx, db, query); err != nil {
 			return errors.New("statistics schema does not match its version")
 		}
-		rows.Close()
 	}
 	if version == 1 || version == 2 {
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return errors.New("cannot start statistics schema migration")
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 		if version == 1 {
 			if _, err := tx.ExecContext(ctx, payloadMigration); err != nil {
 				return errors.New("cannot migrate statistics request payloads")
@@ -131,13 +129,24 @@ func initialize(ctx context.Context, db *sql.DB, empty bool) error {
 			return errors.New("cannot commit statistics schema migration")
 		}
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+eventColumns+","+payloadColumns+" FROM api_requests LIMIT 0")
-	if err != nil {
+	if err := checkSchemaProjection(ctx, db, "SELECT "+eventColumns+","+payloadColumns+" FROM api_requests LIMIT 0"); err != nil {
 		return errors.New("statistics request schema does not match its version")
 	}
-	rows.Close()
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=2000; PRAGMA wal_autocheckpoint=256"); err != nil {
 		return errors.New("cannot configure statistics database")
 	}
 	return nil
+}
+
+func checkSchemaProjection(ctx context.Context, db *sql.DB, query string) (err error) {
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := rows.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+	return rows.Err()
 }

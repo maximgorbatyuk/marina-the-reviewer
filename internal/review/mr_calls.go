@@ -170,10 +170,6 @@ func normalizeMRSymbol(symbol *javaSymbol) {
 	symbol.node.Signature = prefix + " " + symbol.node.Name + "(" + strings.Join(signatures, ", ") + ")"
 }
 
-func newMRCallResolver(symbols []javaSymbol, files []FileSnapshot, graphIDs map[string]string) *mrCallResolver {
-	result, _ := newMRCallResolverContext(context.Background(), symbols, files, graphIDs)
-	return result
-}
 func newMRCallResolverContext(ctx context.Context, symbols []javaSymbol, files []FileSnapshot, graphIDs map[string]string) (*mrCallResolver, error) {
 	r := &mrCallResolver{symbols: symbols, methods: map[mrMethodKey][]int{}, types: map[mrTypeKey][]int{}, bases: map[string][]string{}, variables: map[string]map[string]string{}, graphIDs: graphIDs, implemented: map[mrTypeKey][]string{}, hasBody: map[string]bool{}}
 	sources := map[mrSourceKey][]string{}

@@ -13,8 +13,8 @@ func legacyGraphParents(nodes []GraphNode) map[string]string {
 		var parent *GraphNode
 		for _, candidate := range nodes {
 			if candidate.ID != node.ID && candidate.Kind != 4 && candidate.Path == node.Path && candidate.Revision == node.Revision && candidate.StartLine <= node.StartLine && candidate.EndLine >= node.EndLine && (parent == nil || candidate.EndLine-candidate.StartLine < parent.EndLine-parent.StartLine) {
-				copy := candidate
-				parent = &copy
+				cloned := candidate
+				parent = &cloned
 			}
 		}
 		if parent != nil {

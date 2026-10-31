@@ -21,7 +21,9 @@ func TestCorruptStateIsRejected(t *testing.T) {
 	p := filepath.Join(dir, "state.json")
 	data, _ := os.ReadFile(p)
 	data = bytes.ReplaceAll(data, []byte(`"attempts": 1`), []byte(`"attempts": 2`))
-	os.WriteFile(p, data, 0600)
+	if err := os.WriteFile(p, data, 0600); err != nil {
+		t.Error(err)
+	}
 	if opened, e := Open(dir, "plan"); e == nil {
 		opened.Close()
 		t.Fatal("changed state accepted")
@@ -128,7 +130,9 @@ func TestSymlinkAndUnrelatedDirectoryAreRejected(t *testing.T) {
 		t.Fatal("symlink accepted")
 	}
 	public := filepath.Join(dir, "public")
-	os.Mkdir(public, 0755)
+	if err := os.Mkdir(public, 0755); err != nil {
+		t.Error(err)
+	}
 	if _, err := Open(public, "hash"); err == nil {
 		t.Fatal("nonprivate run directory accepted")
 	}
@@ -136,9 +140,13 @@ func TestSymlinkAndUnrelatedDirectoryAreRejected(t *testing.T) {
 func TestAtomicJSONRefusesSymlinkTarget(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target")
-	os.WriteFile(target, []byte("keep"), 0600)
+	if err := os.WriteFile(target, []byte("keep"), 0600); err != nil {
+		t.Error(err)
+	}
 	link := filepath.Join(dir, "link")
-	os.Symlink(target, link)
+	if err := os.Symlink(target, link); err != nil {
+		t.Error(err)
+	}
 	if err := AtomicJSON(link, map[string]int{"x": 1}); err == nil {
 		t.Fatal("symlink output accepted")
 	}

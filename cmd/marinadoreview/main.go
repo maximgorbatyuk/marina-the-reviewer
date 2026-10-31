@@ -1,3 +1,4 @@
+// Command marinadoreview reviews pinned Git source without changing the reviewed working tree.
 package main
 
 import (

@@ -52,10 +52,6 @@ func nodeIndexValue(indexes []int, zero bool) any {
 
 // Projection membership contains both nodes in each mutual counterpart pair.
 // Store their wire row once and count selected rows without graph copies.
-func newNodeSizer(full Graph) *nodeSizer {
-	value, _ := newNodeSizerContext(context.Background(), full)
-	return value
-}
 func newNodeSizerContext(ctx context.Context, full Graph) (*nodeSizer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -195,10 +191,7 @@ func newNodeSizerContext(ctx context.Context, full Graph) (*nodeSizer, error) {
 	}
 	return s, nil
 }
-func (s *nodeSizer) weight(membership []byte) int {
-	weight, _ := s.weightContext(context.Background(), membership)
-	return weight
-}
+
 func (s *nodeSizer) weightContext(ctx context.Context, membership []byte) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err

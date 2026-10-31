@@ -21,8 +21,8 @@ func TestUsageTracksInvalidOutputWithoutExposingPayloadInReports(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 	r := usage.NewRecorder(path)
 	ctx := usage.WithRecorder(context.Background(), r)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"model-output-secret"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":4,"total_tokens":16}}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":"model-output-secret"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":4,"total_tokens":16}}`)
 	}))
 	defer server.Close()
 	_, err := Complete(ctx, provider(server.URL, false), "synthetic-private-value", Request{SystemPrompt: "private-prompt", UserPrompt: "private-source-code", Schema: schema, MaximumOutputTokens: 1000})
@@ -60,7 +60,7 @@ func TestUsagePreservesCountsFromInvalidEnvelopes(t *testing.T) {
 	} {
 		path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 		r := usage.NewRecorder(path)
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, body) }))
 		_, err := Complete(usage.WithRecorder(context.Background(), r), provider(server.URL, false), "", request())
 		server.Close()
 		if err == nil {
@@ -102,16 +102,21 @@ func TestStreamingUsageOptionsPreserveExplicitSettings(t *testing.T) {
 
 func TestInterruptedSSEKeepsReceivedUsageAfterComments(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.Copy(io.Discard, r.Body)
-		conn, writer, err := w.(http.Hijacker).Hijack()
+		_, _ = io.Copy(io.Discard, r.Body)
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("test response writer does not support hijacking")
+			return
+		}
+		conn, writer, err := hijacker.Hijack()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		payload := ": keepalive\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2,\"total_tokens\":11}}\n\n"
-		fmt.Fprintf(writer, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n", len(payload), payload)
-		writer.Flush()
+		_, _ = fmt.Fprintf(writer, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n", len(payload), payload)
+		_ = writer.Flush()
 	}))
 	defer server.Close()
 	response, err := Complete(context.Background(), provider(server.URL, true), "", request())

@@ -22,12 +22,12 @@ func historicalDatabase(t *testing.T, s Store, version int) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	fixture, err := os.ReadFile(fmt.Sprintf("testdata/schema-v%d.sql", version))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(string(fixture)); err != nil {
+	if _, err := db.ExecContext(t.Context(), string(fixture)); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -36,13 +36,13 @@ func historicalDatabase(t *testing.T, s Store, version int) *sql.DB {
 func TestVersionOneMigrationPreservesHistory(t *testing.T) {
 	s := testStore(t)
 	db := historicalDatabase(t, s, 1)
-	if _, err := db.Exec("INSERT INTO api_requests ("+historicalRequestColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", "old", "finish", stamp(fixedTime()), stamp(fixedTime()), "provider-id", "Example", "cloud", "old-model", "review", "success", 4, 2, 6, "run", "pass"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "INSERT INTO api_requests ("+historicalRequestColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", "old", "finish", stamp(fixedTime()), stamp(fixedTime()), "provider-id", "Example", "cloud", "old-model", "review", "success", 4, 2, 6, "run", "pass"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("INSERT INTO review_runs VALUES(?,?,?,?,?,?,?,?,?,?)", "run", "pass", "plan", stamp(fixedTime()), nil, "unfinished", 1, 0, 0, 0); err != nil {
+	if _, err := db.ExecContext(t.Context(), "INSERT INTO review_runs VALUES(?,?,?,?,?,?,?,?,?,?)", "run", "pass", "plan", stamp(fixedTime()), nil, "unfinished", 1, 0, 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("INSERT INTO metadata VALUES('tracking_since',?)", stamp(fixedTime())); err != nil {
+	if _, err := db.ExecContext(t.Context(), "INSERT INTO metadata VALUES('tracking_since',?)", stamp(fixedTime())); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := s.Snapshot(fixedTime())
@@ -53,10 +53,10 @@ func TestVersionOneMigrationPreservesHistory(t *testing.T) {
 	var url string
 	var request, response []byte
 	var complete sql.NullBool
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err := db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil || version != 3 {
 		t.Fatalf("schema was not upgraded: %d %v", version, err)
 	}
-	if err := db.QueryRow("SELECT request_url,request_payload,response_payload,http_status,response_complete FROM api_requests WHERE request_id='old'").Scan(&url, &request, &response, &status, &complete); err != nil || url != "" || request != nil || response != nil || status != 0 || complete.Valid {
+	if err := db.QueryRowContext(t.Context(), "SELECT request_url,request_payload,response_payload,http_status,response_complete FROM api_requests WHERE request_id='old'").Scan(&url, &request, &response, &status, &complete); err != nil || url != "" || request != nil || response != nil || status != 0 || complete.Valid {
 		t.Fatalf("old payload data was invented: %v", err)
 	}
 	if err := s.Append(testEvent("new", fixedTime())); err != nil {
@@ -70,21 +70,21 @@ func TestVersionOneMigrationPreservesHistory(t *testing.T) {
 func TestVersionOneMigrationRollsBackAndCanBeRetried(t *testing.T) {
 	s := testStore(t)
 	db := historicalDatabase(t, s, 1)
-	if _, err := db.Exec("ALTER TABLE api_requests ADD COLUMN response_payload BLOB"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "ALTER TABLE api_requests ADD COLUMN response_payload BLOB"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Snapshot(fixedTime()); err == nil {
 		t.Fatal("conflicting migration succeeded")
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
+	if err := db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil || version != 1 {
 		t.Fatal("failed migration changed the schema version")
 	}
-	if rows, err := db.Query("SELECT request_url FROM api_requests"); err == nil {
-		rows.Close()
-		t.Fatal("failed migration left partial columns")
+	if rows, err := db.QueryContext(t.Context(), "SELECT request_url FROM api_requests"); err == nil {
+		defer func() { _ = rows.Close() }()
+		t.Fatalf("failed migration left partial columns: %v", rows.Err())
 	}
-	if _, err := db.Exec("ALTER TABLE api_requests DROP COLUMN response_payload"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "ALTER TABLE api_requests DROP COLUMN response_payload"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Snapshot(fixedTime()); err != nil {

@@ -23,18 +23,18 @@ func TestDatabaseRecordsSelectedProviderKind(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				io.Copy(io.Discard, r.Body)
+				_, _ = io.Copy(io.Discard, r.Body)
 				db, err := sql.Open("sqlite", path)
 				if err != nil {
 					t.Error(err)
 					return
 				}
-				defer db.Close()
+				defer func() { _ = db.Close() }()
 				var saved sql.NullString
-				if err := db.QueryRow("SELECT provider_kind FROM api_requests WHERE request_id='selected-call'").Scan(&saved); err != nil || saved.String != string(kind) || saved.Valid != (kind != config.ProviderUnspecified) {
+				if err := db.QueryRowContext(t.Context(), "SELECT provider_kind FROM api_requests WHERE request_id='selected-call'").Scan(&saved); err != nil || saved.String != string(kind) || saved.Valid != (kind != config.ProviderUnspecified) {
 					t.Errorf("selected provider kind was not saved before sending: %+v %v", saved, err)
 				}
-				w.Write([]byte(`{"choices":[{"message":{"content":"{\"findings\":[]}"},"finish_reason":"stop"}]}`))
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"findings\":[]}"},"finish_reason":"stop"}]}`))
 			}))
 			defer server.Close()
 			snapshot := provider(server.URL, false)
@@ -52,10 +52,10 @@ func TestDatabaseRecordsSelectedProviderKind(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			var saved sql.NullString
 			var display, profile, model, url string
-			if err := db.QueryRow("SELECT provider_kind,provider,profile,model,request_url FROM api_requests WHERE request_id='selected-call'").Scan(&saved, &display, &profile, &model, &url); err != nil {
+			if err := db.QueryRowContext(t.Context(), "SELECT provider_kind,provider,profile,model,request_url FROM api_requests WHERE request_id='selected-call'").Scan(&saved, &display, &profile, &model, &url); err != nil {
 				t.Fatal(err)
 			}
 			if saved.String != string(kind) || saved.Valid != (kind != config.ProviderUnspecified) || display != server.URL+"/v1" || profile != snapshot.Name || model != snapshot.Profile.Model || url != server.URL+"/v1/chat/completions" {
@@ -66,8 +66,8 @@ func TestDatabaseRecordsSelectedProviderKind(t *testing.T) {
 }
 
 func TestProbeRecordsSelectedProviderKind(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}]}`))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}]}`))
 	}))
 	defer server.Close()
 	snapshot := provider(server.URL, false)
@@ -84,9 +84,9 @@ func TestProbeRecordsSelectedProviderKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var kind, operation string
-	if err := db.QueryRow("SELECT provider_kind,operation FROM api_requests").Scan(&kind, &operation); err != nil || kind != "xiaomi-mimo" || operation != "connection-test" {
+	if err := db.QueryRowContext(t.Context(), "SELECT provider_kind,operation FROM api_requests").Scan(&kind, &operation); err != nil || kind != "xiaomi-mimo" || operation != "connection-test" {
 		t.Fatalf("probe lost its selected provider kind: %v", err)
 	}
 	report, err := usage.Generate(usage.Store{Path: path}, time.Now().UTC(), []int{7})

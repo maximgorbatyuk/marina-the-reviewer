@@ -23,7 +23,7 @@ func maintain(s *session, now time.Time) error {
 	if err != nil {
 		return errors.New("cannot start statistics maintenance")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	cutoff := stamp(now.Add(-RetentionDays * 24 * time.Hour))
 	for _, table := range []string{"api_requests", "review_runs"} {
 		if _, err := tx.ExecContext(s.ctx, "DELETE FROM "+table+" WHERE started_at<?", cutoff); err != nil {

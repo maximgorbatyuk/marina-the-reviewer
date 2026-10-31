@@ -52,6 +52,8 @@ func scanReview(row rowScanner) (Review, error) {
 	}
 	return r, validReview(r)
 }
+
+// SaveReview records review outcomes separately from individual provider request events.
 func (s Store) SaveReview(r Review) error {
 	if err := validReview(r); err != nil {
 		return err
@@ -69,7 +71,7 @@ func (s Store) SaveReview(r Review) error {
 	if err != nil {
 		return errors.New("cannot start review statistics write")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	previous, err := scanReview(tx.QueryRowContext(opened.ctx, "SELECT "+reviewColumns+" FROM review_runs WHERE run_id=? AND pass_id=?", r.RunID, r.PassID))
 	if err == nil {
 		if previous.PlanHash != r.PlanHash || !previous.StartedAt.Equal(r.StartedAt) {

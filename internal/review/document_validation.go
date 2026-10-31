@@ -11,9 +11,7 @@ import (
 func validSourcePath(value string) bool {
 	return value != "" && !strings.ContainsRune(value, 0) && !strings.HasPrefix(value, "/") && path.Clean(value) == value && value != ".." && !strings.HasPrefix(value, "../")
 }
-func validateSlice(s CodeSlice) error {
-	return validateSliceContext(context.Background(), s)
-}
+
 func validateSliceContext(ctx context.Context, s CodeSlice) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -204,9 +202,13 @@ func validateBlocksAndGraphContext(ctx context.Context, blocks []Block, g Graph)
 	}
 	return ctx.Err()
 }
+
+// ValidateDocument uses a background context for callers without cancellation support.
 func ValidateDocument(d Document) error {
 	return ValidateDocumentContext(context.Background(), d)
 }
+
+// ValidateDocumentContext checks source coverage and graph consistency before a document is planned.
 func ValidateDocumentContext(ctx context.Context, d Document) error {
 	if err := ctx.Err(); err != nil {
 		return err

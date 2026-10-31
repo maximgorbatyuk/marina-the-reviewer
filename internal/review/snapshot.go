@@ -25,9 +25,13 @@ func snapshotManifestContext(ctx context.Context, s Snapshot) (string, error) {
 	}
 	return contextHash(ctx, value)
 }
+
+// ValidateSnapshot uses a background context for callers without cancellation support.
 func ValidateSnapshot(s Snapshot) error {
 	return ValidateSnapshotContext(context.Background(), s)
 }
+
+// ValidateSnapshotContext rejects inconsistent paths, identities, or source digests before analysis.
 func ValidateSnapshotContext(ctx context.Context, s Snapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err

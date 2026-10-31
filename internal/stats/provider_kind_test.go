@@ -42,9 +42,9 @@ func TestProviderKindIsImmutableAcrossRequestLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			var saved sql.NullString
-			if err := db.QueryRow("SELECT provider_kind FROM api_requests WHERE request_id='one'").Scan(&saved); err != nil || saved.String != kind || saved.Valid != (kind != "") {
+			if err := db.QueryRowContext(t.Context(), "SELECT provider_kind FROM api_requests WHERE request_id='one'").Scan(&saved); err != nil || saved.String != kind || saved.Valid != (kind != "") {
 				t.Fatal("unknown provider kind did not remain SQL NULL")
 			}
 			encoded, err := json.Marshal(snapshot.Events[0])

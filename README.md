@@ -11,7 +11,7 @@ brew install maximgorbatyuk/tap/marina-the-reviewer
 marinadoreview --version --json
 ```
 
-Release archives support macOS and Linux on arm64 and amd64. The Homebrew formula builds the release from source. Git is required. To build locally, use Go 1.27.1 or later:
+Release archives support macOS and Linux on arm64 and amd64. The Homebrew formula builds the release from source. Git is required. To build locally, use Go 1.27.1 or later and install [golangci-lint](https://golangci-lint.run/docs/welcome/install/local/) at the version in `.golangci-lint-version`:
 
 ```sh
 make build
@@ -281,8 +281,15 @@ Token counts are conservative estimates, not provider tokenizer results. Plannin
 ## Development
 
 ```sh
+make fmt
+make lint-config
+make lint
 make verify
 go run scripts/generate_schemas.go
 ```
+
+`make fmt` applies `gofmt` and `goimports`. `make lint-config` validates the configuration against the pinned linter's schema. `make lint` validates that configuration, then checks formatting, the standard golangci-lint rules, and `revive` without changing files. Both `make build` and `make verify` require lint to pass before they run. CI installs the pinned linter and runs `make verify` on Linux and macOS. Set `GOLANGCI_LINT=/path/to/golangci-lint` to use a binary outside `PATH`.
+
+The reliability checks also cover HTTP body closure, SQL row closure and iteration errors, wrapped error handling, context-aware operations, nested context lifetimes, duration arithmetic, host and port formatting, compiler directives, and bidirectional Unicode controls. `errcheck` checks type assertions; `govet` also checks error comparisons through reflection and impossible nil conditions. `nolint` directives must name the linter and explain the reason; `revive` disable directives must also name the rule and explain the reason. The standard `revive` rules remain enabled.
 
 Tests use synthetic fixtures, temporary Git repositories and local fake AI servers. No token, paid request, Marina service or database is needed. See [RELEASING.md](RELEASING.md) for publication. MIT license: [LICENSE](LICENSE).

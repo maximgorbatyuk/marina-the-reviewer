@@ -116,6 +116,7 @@ ON CONFLICT(request_id) DO UPDATE SET kind=excluded.kind,at=excluded.at,status=e
 	return earliest(ctx, tx, "tracking_since", e.StartedAt)
 }
 
+// Append records one request event while preserving paired request identity and retention policy.
 func (s Store) Append(e Event) error {
 	if err := validEvent(e); err != nil {
 		return err
@@ -133,7 +134,7 @@ func (s Store) Append(e Event) error {
 	if err != nil {
 		return errors.New("cannot start statistics write")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := appendEvent(opened.ctx, tx, e, now); err != nil {
 		return err
 	}
@@ -148,10 +149,12 @@ func (s Store) Read() ([]Event, bool, error) {
 	return snapshot.Events, snapshot.IncompleteTail, err
 }
 
+// Snapshot reads retained statistics for reports without changing their event grain.
 func (s Store) Snapshot(now time.Time) (Snapshot, error) {
 	return s.Window(now, RetentionDays)
 }
 
+// Window loads a bounded reporting interval without exposing unrelated retained events.
 func (s Store) Window(now time.Time, days int) (Snapshot, error) {
 	result := Snapshot{Events: []Event{}, Reviews: []Review{}}
 	if days != 7 && days != 30 && days != RetentionDays {
@@ -170,41 +173,47 @@ func (s Store) Window(now time.Time, days int) (Snapshot, error) {
 	if err != nil {
 		return result, errors.New("cannot start statistics read")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	since := stamp(now.Add(-time.Duration(days) * 24 * time.Hour))
-	rows, err := tx.QueryContext(opened.ctx, "SELECT "+eventColumns+" FROM api_requests WHERE started_at>=? AND started_at<=? ORDER BY request_id", since, stamp(now))
-	if err != nil {
-		return result, errors.New("cannot read token statistics")
-	}
-	for rows.Next() {
-		e, err := scanEvent(rows)
+	if err := func() error {
+		rows, err := tx.QueryContext(opened.ctx, "SELECT "+eventColumns+" FROM api_requests WHERE started_at>=? AND started_at<=? ORDER BY request_id", since, stamp(now))
 		if err != nil {
-			rows.Close()
-			return result, errors.New("invalid stored token statistics")
+			return errors.New("cannot read token statistics")
 		}
-		result.Events = append(result.Events, e)
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			e, err := scanEvent(rows)
+			if err != nil {
+				return errors.New("invalid stored token statistics")
+			}
+			result.Events = append(result.Events, e)
+		}
+		if rows.Err() != nil {
+			return errors.New("cannot read token statistics")
+		}
+		return nil
+	}(); err != nil {
+		return result, err
 	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return result, errors.New("cannot read token statistics")
-	}
-	rows, err = tx.QueryContext(opened.ctx, "SELECT "+reviewColumns+" FROM review_runs WHERE started_at>=? AND started_at<=? ORDER BY run_id,pass_id", since, stamp(now))
-	if err != nil {
-		return result, errors.New("cannot read review statistics")
-	}
-	for rows.Next() {
-		r, err := scanReview(rows)
+	if err := func() error {
+		rows, err := tx.QueryContext(opened.ctx, "SELECT "+reviewColumns+" FROM review_runs WHERE started_at>=? AND started_at<=? ORDER BY run_id,pass_id", since, stamp(now))
 		if err != nil {
-			rows.Close()
-			return result, errors.New("invalid stored review statistics")
+			return errors.New("cannot read review statistics")
 		}
-		result.Reviews = append(result.Reviews, r)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return result, errors.New("cannot read review statistics")
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			r, err := scanReview(rows)
+			if err != nil {
+				return errors.New("invalid stored review statistics")
+			}
+			result.Reviews = append(result.Reviews, r)
+		}
+		if rows.Err() != nil {
+			return errors.New("cannot read review statistics")
+		}
+		return nil
+	}(); err != nil {
+		return result, err
 	}
 	for _, field := range []struct {
 		key    string

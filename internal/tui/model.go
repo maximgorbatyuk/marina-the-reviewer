@@ -1,3 +1,4 @@
+// Package tui isolates interactive configuration from scripted CLI input and output.
 package tui
 
 import (

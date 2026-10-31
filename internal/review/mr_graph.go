@@ -10,12 +10,9 @@ import (
 	"unicode"
 )
 
+// CurrentSelectionVersion identifies the algorithm used to select changed code and dependency context.
 const CurrentSelectionVersion = 2
 
-func selectMRGraph(full Graph, symbols []javaSymbol) (Graph, map[string]string, map[string]bool) {
-	graph, ids, bodies, _ := selectMRGraphContext(context.Background(), full, symbols)
-	return graph, ids, bodies
-}
 func selectMRGraphContext(ctx context.Context, full Graph, symbols []javaSymbol) (Graph, map[string]string, map[string]bool, error) {
 	nodes := make(map[string]GraphNode, len(full.Nodes))
 	parents := map[string]string{}
@@ -180,10 +177,6 @@ func selectMRGraphContext(ctx context.Context, full Graph, symbols []javaSymbol)
 
 var moveTokenPattern = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
-func possibleMoveEdges(symbols []javaSymbol) []GraphEdge {
-	result, _ := possibleMoveEdgesContext(context.Background(), symbols)
-	return result
-}
 func possibleMoveEdgesContext(ctx context.Context, symbols []javaSymbol) ([]GraphEdge, error) {
 	type moveSource struct {
 		symbol    javaSymbol

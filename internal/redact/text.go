@@ -1,3 +1,4 @@
+// Package redact removes likely credentials before text enters retained diagnostics.
 package redact
 
 import (
@@ -8,6 +9,7 @@ import (
 	"unicode/utf8"
 )
 
+// Text removes likely credentials before diagnostics or provider output are retained.
 func Text(value string, tokens map[string]string) string {
 	secrets := []string{}
 	for _, token := range tokens {

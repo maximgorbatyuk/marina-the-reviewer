@@ -27,7 +27,7 @@ func TestGitToReviewAndResume(t *testing.T) {
 	}
 	git := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", repo}, args...)...)
 		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 		if b, e := cmd.CombinedOutput(); e != nil {
 			t.Fatalf("git: %s: %v", b, e)
@@ -35,15 +35,19 @@ func TestGitToReviewAndResume(t *testing.T) {
 	}
 	git("init", "--initial-branch=dev")
 	path := filepath.Join(repo, "main.go")
-	os.WriteFile(path, []byte("package main\nfunc main() {}\n"), 0600)
+	if err := os.WriteFile(path, []byte("package main\nfunc main() {}\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	git("add", ".")
 	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "base")
-	os.WriteFile(path, []byte("package main\nfunc main() { println(1) }\n"), 0600)
+	if err := os.WriteFile(path, []byte("package main\nfunc main() { println(1) }\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	git("add", ".")
 	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "head")
 	resolve := func(ref string) string {
 		t.Helper()
-		data, err := exec.Command("git", "-C", repo, "rev-parse", ref).Output()
+		data, err := exec.CommandContext(t.Context(), "git", "-C", repo, "rev-parse", ref).Output()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +55,7 @@ func TestGitToReviewAndResume(t *testing.T) {
 	}
 	baseSha, headSha := resolve("HEAD~1"), resolve("HEAD")
 	bare := filepath.Join(dir, "objects.git")
-	if data, err := exec.Command("git", "clone", "--bare", "--no-hardlinks", repo, bare).CombinedOutput(); err != nil {
+	if data, err := exec.CommandContext(t.Context(), "git", "clone", "--bare", "--no-hardlinks", repo, bare).CombinedOutput(); err != nil {
 		t.Fatalf("bare source: %s %v", data, err)
 	}
 	var calls atomic.Int32
@@ -62,7 +66,9 @@ func TestGitToReviewAndResume(t *testing.T) {
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
-		json.NewDecoder(r.Body).Decode(&request)
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
 		var input struct {
 			Batch struct {
 				Blocks []struct {
@@ -78,11 +84,15 @@ func TestGitToReviewAndResume(t *testing.T) {
 			ids = append(ids, b.ID)
 		}
 		model, _ := json.Marshal(map[string]any{"checkedBlockIds": ids, "findings": []any{}, "strengths": []any{}, "unconfirmedDependencies": []any{}})
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": string(model)}, "finish_reason": "stop"}}})
+		if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": string(model)}, "finish_reason": "stop"}}}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer server.Close()
 	conf := filepath.Join(dir, "config.json")
-	os.WriteFile(conf, []byte(`{"version":1,"routing":{"primary":"local"},"profiles":{"local":{"baseUrl":"`+server.URL+`","model":"fake","apiKeyEnv":"MTR_TEST_CLI_KEY","contextLength":65536}}}`), 0600)
+	if err := os.WriteFile(conf, []byte(`{"version":1,"routing":{"primary":"local"},"profiles":{"local":{"baseUrl":"`+server.URL+`","model":"fake","apiKeyEnv":"MTR_TEST_CLI_KEY","contextLength":65536}}}`), 0600); err != nil {
+		t.Error(err)
+	}
 	invoke := func(args ...string) map[string]any {
 		t.Helper()
 		var out, errs bytes.Buffer
@@ -182,7 +192,11 @@ func TestGitToReviewAndResume(t *testing.T) {
 		}
 	})
 	t.Run("large-offline-archive", func(t *testing.T) {
-		store, err := runstore.Open(runDir, archive["planHash"].(string))
+		planHash, ok := archive["planHash"].(string)
+		if !ok {
+			t.Fatal("archive has no plan hash")
+		}
+		store, err := runstore.Open(runDir, planHash)
 		if err != nil {
 			t.Fatal(err)
 		}

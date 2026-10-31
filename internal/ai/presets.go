@@ -6,6 +6,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 )
 
+// Preset keeps provider defaults together so setup does not need network discovery.
 type Preset struct {
 	Provider config.ProviderKind
 	Name     string
@@ -13,6 +14,7 @@ type Preset struct {
 	Local    bool
 }
 
+// Presets returns independent copies of the supported provider defaults.
 func Presets() []Preset {
 	definitions := []struct {
 		provider          config.ProviderKind

@@ -38,7 +38,7 @@ func TestListModelsPathsAndAuthentication(t *testing.T) {
 				if r.URL.Path != want || r.Method != "GET" || r.Header.Get("Authorization") != "Bearer test-value" {
 					t.Error("wrong model discovery request")
 				}
-				fmt.Fprint(w, `{"data":[{"id":"z"},{"id":"a"},{"id":"a"},{"id":"bad\u001b[2J"}]}`)
+				_, _ = fmt.Fprint(w, `{"data":[{"id":"z"},{"id":"a"},{"id":"a"},{"id":"bad\u001b[2J"}]}`)
 			}))
 			defer s.Close()
 			p := provider(s.URL, false)
@@ -54,9 +54,9 @@ func TestListModelsPathsAndAuthentication(t *testing.T) {
 func TestListModelsErrorsAndCancellation(t *testing.T) {
 	for status, code := range map[int]string{401: "authentication", 403: "authentication", 404: "models_unavailable", 405: "models_unavailable", 429: "rate_limit", 500: "server_error", 501: "models_unavailable", 302: "configuration"} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(status)
-				fmt.Fprint(w, "reflected-test-value")
+				_, _ = fmt.Fprint(w, "reflected-test-value")
 			}))
 			defer s.Close()
 			_, err := ListModels(context.Background(), provider(s.URL, false), "reflected-test-value")
@@ -67,14 +67,14 @@ func TestListModelsErrorsAndCancellation(t *testing.T) {
 		})
 	}
 	for _, body := range []string{`broken`, `{"data":null}`, `{"data":[]}`, `{"data":[{"id":"a"}]} trailing`, strings.Repeat("x", (1<<20)+1)} {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, body) }))
 		_, err := ListModels(context.Background(), provider(s.URL, false), "")
 		s.Close()
 		if err == nil {
 			t.Fatal("unavailable or malformed models accepted")
 		}
 	}
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 	defer s.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
@@ -94,7 +94,7 @@ func TestProbeUsesSelectedProfileOnce(t *testing.T) {
 		if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer test-value" || string(body["model"]) != `"model"` || string(body["max_completion_tokens"]) != "128" || string(body["reasoning_effort"]) != `"low"` {
 			t.Error("profile settings ignored")
 		}
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}]}`)
+		_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}]}`)
 	}))
 	defer s.Close()
 	p := provider(s.URL, false)
@@ -108,10 +108,10 @@ func TestProbeUsesSelectedProfileOnce(t *testing.T) {
 
 func TestProbeFailureHasNoRetryOrSensitiveOutput(t *testing.T) {
 	var calls atomic.Int32
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(503)
-		fmt.Fprint(w, "test-value")
+		_, _ = fmt.Fprint(w, "test-value")
 	}))
 	defer s.Close()
 	p := provider(s.URL, false)
@@ -124,7 +124,7 @@ func TestProbeFailureHasNoRetryOrSensitiveOutput(t *testing.T) {
 
 func TestListModelsDoesNotFollowRedirect(t *testing.T) {
 	var leaked atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked.Add(1) }))
+	target := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { leaked.Add(1) }))
 	defer target.Close()
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
 	defer source.Close()

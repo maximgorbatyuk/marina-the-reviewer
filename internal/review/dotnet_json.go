@@ -10,6 +10,7 @@ import (
 	"unicode/utf16"
 )
 
+// MarshalJSON preserves the candidate decision wire shape for compatibility consumers.
 func (c CandidateDecision) MarshalJSON() ([]byte, error) {
 	type candidate CandidateDecision
 	v := struct {

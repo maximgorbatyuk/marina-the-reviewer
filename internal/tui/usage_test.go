@@ -197,7 +197,10 @@ func TestUsageLoadingStaleResultAndRefresh(t *testing.T) {
 		t.Fatal("refresh started a duplicate read")
 	}
 	m.Update(key('3', "3"))
-	first := cmd().(usageLoaded)
+	first, ok := cmd().(usageLoaded)
+	if !ok {
+		t.Fatal("usage command returned an unexpected message")
+	}
 	m.Update(first)
 	if m.usage.days != 90 || !strings.Contains(m.usage.viewport.GetContent(), "Total: 66") {
 		t.Fatal("load ignored the latest period selection")

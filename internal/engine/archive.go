@@ -1,3 +1,4 @@
+// Package engine persists review execution state so interrupted work can resume without losing validated results.
 package engine
 
 import (
@@ -13,8 +14,10 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
 
+// ExecutionArchiveVersion identifies the execution archive wire format for offline consumers.
 const ExecutionArchiveVersion = 1
 
+// ExecutionArchive keeps results and attempts together for inspection without rerunning inference.
 type ExecutionArchive struct {
 	SchemaVersion  int              `json:"schemaVersion"`
 	Kind           string           `json:"kind"`
@@ -34,6 +37,7 @@ type ExecutionArchive struct {
 	Attempts       []ArchiveAttempt `json:"attempts"`
 }
 
+// ArchiveWork preserves the state of each work item so archive readers can explain incomplete runs.
 type ArchiveWork struct {
 	WorkID       string               `json:"workId"`
 	ParentWorkID string               `json:"parentWorkId"`
@@ -45,6 +49,7 @@ type ArchiveWork struct {
 	InFlight     bool                 `json:"inFlight"`
 }
 
+// ArchiveDiagnostic retains a safe failure description alongside provider response diagnostics.
 type ArchiveDiagnostic struct {
 	Message                string `json:"message"`
 	StatusCode             int    `json:"statusCode,omitempty"`
@@ -52,6 +57,7 @@ type ArchiveDiagnostic struct {
 	RawResponse            string `json:"rawResponse,omitempty"`
 }
 
+// ArchiveAttempt records request and response details so an inference attempt can be inspected offline.
 type ArchiveAttempt struct {
 	WorkID                   string             `json:"workId"`
 	Number                   int                `json:"number"`
@@ -81,6 +87,7 @@ func (archive ExecutionArchive) Write(path string) error {
 	return runstore.AtomicJSONLimit(path, archive, runstore.MaximumExecutionDocumentBytes)
 }
 
+// ExportArchive validates saved run state before constructing an execution archive.
 func ExportArchive(directory string) (ExecutionArchive, error) {
 	raw, err := runstore.ReadPrivate(filepath.Join(directory, "plan.json"), runstore.MaximumDocumentBytes)
 	if err != nil {

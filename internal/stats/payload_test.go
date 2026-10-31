@@ -45,9 +45,9 @@ func TestPayloadLifecycleRejectsConflictsAndExpiresWithRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var response []byte
-	if err := db.QueryRow("SELECT response_payload FROM api_requests WHERE request_id='old'").Scan(&response); err != nil || !bytes.Equal(response, e.ResponsePayload) {
+	if err := db.QueryRowContext(t.Context(), "SELECT response_payload FROM api_requests WHERE request_id='old'").Scan(&response); err != nil || !bytes.Equal(response, e.ResponsePayload) {
 		t.Fatal("saved response was changed")
 	}
 	recent := e
@@ -60,10 +60,10 @@ func TestPayloadLifecycleRejectsConflictsAndExpiresWithRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := db.QueryRow("SELECT count(*) FROM api_requests WHERE request_id='old'").Scan(&count); err != nil || count != 0 {
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM api_requests WHERE request_id='old'").Scan(&count); err != nil || count != 0 {
 		t.Fatal("expired payload was retained")
 	}
-	if err := db.QueryRow("SELECT response_payload FROM api_requests WHERE request_id='recent'").Scan(&response); err != nil || !bytes.Equal(response, recent.ResponsePayload) {
+	if err := db.QueryRowContext(t.Context(), "SELECT response_payload FROM api_requests WHERE request_id='recent'").Scan(&response); err != nil || !bytes.Equal(response, recent.ResponsePayload) {
 		t.Fatal("recent payload was removed")
 	}
 }

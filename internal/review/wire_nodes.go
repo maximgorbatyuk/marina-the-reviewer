@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 )
@@ -13,10 +14,6 @@ type wireNodeCatalogue struct {
 	Groups   []any
 }
 
-func makeWireNodeCatalogue(nodes []GraphNode) wireNodeCatalogue {
-	value, _ := makeWireNodeCatalogueContext(context.Background(), nodes)
-	return value
-}
 func makeWireNodeCatalogueContext(ctx context.Context, nodes []GraphNode) (wireNodeCatalogue, error) {
 	if err := ctx.Err(); err != nil {
 		return wireNodeCatalogue{}, err
@@ -117,8 +114,15 @@ func makeWireNodeCatalogueContext(ctx context.Context, nodes []GraphNode) (wireN
 		key := canonicalJSON(group)
 		row := []any{[]any{value(before, "id"), value(after, "id")}, shared(value(before, "signature"), value(after, "signature"))}
 		if i, ok := groupIndex[key]; ok {
-			prior := nodeGroups[i].([]any)
-			prior[4] = append(prior[4].([]any), row)
+			prior, ok := nodeGroups[i].([]any)
+			if !ok {
+				return wireNodeCatalogue{}, errors.New("invalid graph node group")
+			}
+			rows, ok := prior[4].([]any)
+			if !ok {
+				return wireNodeCatalogue{}, errors.New("invalid graph node rows")
+			}
+			prior[4] = append(rows, row)
 		} else {
 			groupIndex[key] = len(nodeGroups)
 			nodeGroups = append(nodeGroups, append(group, []any{row}))

@@ -1,3 +1,4 @@
+// Package cli keeps command parsing and process exit policy separate from review execution.
 package cli
 
 import (

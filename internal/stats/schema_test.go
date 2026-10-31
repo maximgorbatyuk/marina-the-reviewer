@@ -20,12 +20,12 @@ func TestFailedSchemaInitializationCanBeRetried(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file.Close()
+	_ = file.Close()
 	db, err := sql.Open("sqlite", s.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	ctx := context.Background()
@@ -34,7 +34,7 @@ func TestFailedSchemaInitializationCanBeRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	previousLimit, err := sqlite.Limit(conn, sqlite3.SQLITE_LIMIT_SQL_LENGTH, 512)
-	conn.Close()
+	_ = conn.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestFailedSchemaInitializationCanBeRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = sqlite.Limit(conn, sqlite3.SQLITE_LIMIT_SQL_LENGTH, previousLimit)
-	conn.Close()
+	_ = conn.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
