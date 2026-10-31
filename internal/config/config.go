@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+const DefaultContextLength = 1048576
+
 type Config struct {
 	Version  int                `json:"version"`
 	Routing  Routing            `json:"routing"`
@@ -120,8 +122,8 @@ func Init(path string) error {
 	}
 	defer f.Close()
 	cfg := Config{Version: 1, Routing: Routing{Primary: "primary", Fallback: "backup", FallbackOn: DefaultFallbackErrors()}, Profiles: map[string]Profile{
-		"primary": {Backend: "openai-compatible", BaseURL: "https://provider.example/v1", Model: "review-model", APIKeyEnv: "REVIEW_API_KEY", ContextLength: 131072},
-		"backup":  {Backend: "openai-compatible", BaseURL: "https://backup-provider.example/v1", Model: "backup-review-model", APIKeyEnv: "BACKUP_REVIEW_API_KEY", ContextLength: 65536},
+		"primary": {Backend: "openai-compatible", BaseURL: "https://provider.example/v1", Model: "review-model", APIKeyEnv: "REVIEW_API_KEY", ContextLength: DefaultContextLength},
+		"backup":  {Backend: "openai-compatible", BaseURL: "https://backup-provider.example/v1", Model: "backup-review-model", APIKeyEnv: "BACKUP_REVIEW_API_KEY", ContextLength: DefaultContextLength},
 	}}
 	for name, profile := range cfg.Profiles {
 		if err := normalize(&profile); err != nil {
@@ -238,7 +240,31 @@ func ResolveRouting(cfg Config, override Overrides) (Route, error) {
 	if err := normalize(&route.Primary.Profile); err != nil {
 		return Route{}, err
 	}
+	freezeModelOutputBudget(&route.Primary.Profile)
+	if route.Fallback != nil {
+		freezeModelOutputBudget(&route.Fallback.Profile)
+	}
 	return route, nil
+}
+
+func freezeModelOutputBudget(profile *Profile) {
+	if profile.MaximumOutputTokens != 0 {
+		return
+	}
+	model := strings.ToLower(strings.TrimSpace(profile.Model))
+	if slash := strings.LastIndexByte(model, '/'); slash >= 0 {
+		model = model[slash+1:]
+	}
+	ceiling := 0
+	switch {
+	case strings.HasPrefix(model, "mimo-"):
+		ceiling = 131072
+	case strings.HasPrefix(model, "deepseek-"):
+		ceiling = 65536
+	default:
+		return
+	}
+	profile.MaximumOutputTokens = min((profile.ContextLength+4)/5, ceiling)
 }
 
 func ResolveProfile(cfg Config, name string) (ProviderSnapshot, error) {
@@ -342,7 +368,7 @@ func normalize(profile *Profile) error {
 		return errors.New("model is required")
 	}
 	if profile.ContextLength == 0 {
-		profile.ContextLength = 131072
+		profile.ContextLength = DefaultContextLength
 	}
 	if profile.ContextLength < 1024 || profile.ContextLength > 16*1024*1024 || profile.MaximumOutputTokens < 0 || profile.MaximumOutputTokens >= profile.ContextLength {
 		return errors.New("invalid context or output token budget")

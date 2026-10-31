@@ -153,3 +153,77 @@ func TestInitPreservesExistingConfigAndUsesPrivateMode(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDefaultContextWindowAndExplicitSnapshotStayIndependent(t *testing.T) {
+	cfg := example()
+	route, err := ResolveRouting(cfg, Overrides{})
+	if err != nil || route.Primary.Profile.ContextLength != 1048576 || route.Fallback == nil || route.Fallback.Profile.ContextLength != 1048576 {
+		t.Fatalf("default route does not use the one-million-token context: %v %+v", err, route)
+	}
+	primary := cfg.Profiles["main"]
+	primary.ContextLength = 131072
+	cfg.Profiles["main"] = primary
+	route, err = ResolveRouting(cfg, Overrides{})
+	if err != nil || route.Primary.Profile.ContextLength != 131072 || ValidateRoute(route) != nil {
+		t.Fatal("an explicit saved context was changed by the new default")
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Init(path); err != nil {
+		t.Fatal(err)
+	}
+	initialized, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, profile := range initialized.Profiles {
+		if profile.ContextLength != 1048576 {
+			t.Fatalf("new profile %s has context %d", name, profile.ContextLength)
+		}
+	}
+}
+
+func TestNewRoutesFreezeModelOutputBudgetsIndependentlyOfProfileNames(t *testing.T) {
+	for _, primaryName := range []string{"mimo", "xiamo-mimo", "arbitrary-primary"} {
+		for _, model := range []string{"mimo-v2.6-pro", "xiaomi/MiMo-v2.6-pro"} {
+			cfg := Config{Version: 1, Routing: Routing{Primary: primaryName, Fallback: "arbitrary-backup"}, Profiles: map[string]Profile{
+				primaryName:        {BaseURL: "https://primary.example/v1", Model: model, ContextLength: 1048576},
+				"arbitrary-backup": {BaseURL: "https://backup.example/v1", Model: "deepseek/deepseek-v4-pro", ContextLength: 1048576},
+			}}
+			route, err := ResolveRouting(cfg, Overrides{})
+			if err != nil || route.Primary.Profile.MaximumOutputTokens != 131072 || route.Fallback == nil || route.Fallback.Profile.MaximumOutputTokens != 65536 {
+				t.Fatalf("profile alias changed the model budget: %s/%s %v %+v", primaryName, model, err, route)
+			}
+			if cfg.Profiles[primaryName].MaximumOutputTokens != 0 {
+				t.Fatal("routing changed the saved provider configuration")
+			}
+			route, err = ResolveRouting(cfg, Overrides{MaximumOutputTokens: 12000})
+			if err != nil || route.Primary.Profile.MaximumOutputTokens != 12000 || route.Fallback.Profile.MaximumOutputTokens != 65536 {
+				t.Fatal("derived budget replaced an explicit output budget or changed the fallback")
+			}
+		}
+	}
+}
+
+func TestModelOutputBudgetUsesTheContextCeilingAndKeepsExplicitReserves(t *testing.T) {
+	for _, contextLength := range []int{1024, 131072, 131073, 1048576} {
+		for _, item := range []struct {
+			model   string
+			ceiling int
+		}{{"mimo-v2.6-pro", 131072}, {"deepseek-v4-pro", 65536}} {
+			cfg := Config{Version: 1, Routing: Routing{Primary: "alias"}, Profiles: map[string]Profile{
+				"alias": {BaseURL: "https://provider.example/v1", Model: item.model, ContextLength: contextLength},
+			}}
+			route, err := ResolveRouting(cfg, Overrides{})
+			if err != nil || route.Primary.Profile.MaximumOutputTokens != min((contextLength+4)/5, item.ceiling) {
+				t.Fatalf("wrong model context ceiling for %s/%d: %v", item.model, contextLength, err)
+			}
+			profile := cfg.Profiles["alias"]
+			profile.MaximumOutputTokens = 777
+			cfg.Profiles["alias"] = profile
+			route, err = ResolveRouting(cfg, Overrides{})
+			if err != nil || route.Primary.Profile.MaximumOutputTokens != 777 {
+				t.Fatal("model default replaced an explicit profile output reserve")
+			}
+		}
+	}
+}

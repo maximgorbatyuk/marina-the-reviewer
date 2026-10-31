@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -151,7 +152,7 @@ func TestRequestDeadlineDuringResponseBodyIsTimeout(t *testing.T) {
 	streamed := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"partial-output\"}}]}\n\n"))
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"private-reasoning\",\"content\":\"partial-output\"}}]}\n\n"))
 		w.(http.Flusher).Flush()
 		close(streamed)
 		<-r.Context().Done()
@@ -171,5 +172,34 @@ func TestRequestDeadlineDuringResponseBodyIsTimeout(t *testing.T) {
 	}
 	if result.RawOutput != "partial-output" || result.ResponsePayload == "" || !result.ResponsePayloadTruncated {
 		t.Fatal("timeout lost its partial response diagnostic")
+	}
+	for _, detail := range []string{"timeout 1s", "received ", "content 14 bytes", "reasoning 17 bytes", "terminal finish reason absent"} {
+		if !strings.Contains(failure.Message, detail) {
+			t.Fatalf("timeout has no %q diagnostic: %s", detail, failure.Message)
+		}
+	}
+	if strings.Contains(failure.Message, "partial-output") || strings.Contains(failure.Message, "private-reasoning") {
+		t.Fatal("timeout diagnostic contains provider text")
+	}
+	if result.Elapsed <= 0 {
+		t.Fatal("timeout has no elapsed duration")
+	}
+}
+
+func TestRequestDeadlineBeforeHeadersReportsResponseWasNotStarted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		io.Copy(io.Discard, request.Body)
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+	snapshot := provider(server.URL, false)
+	snapshot.Profile.TimeoutSeconds = 1
+	response, err := Complete(context.Background(), snapshot, "", request())
+	var failure *Error
+	if !errors.As(err, &failure) || failure.Code != "timeout" || !strings.Contains(failure.Message, "no response headers") || !strings.Contains(failure.Message, "timeout 1s") {
+		t.Fatalf("response-start state was lost: %v", err)
+	}
+	if response.ResponsePayload != "" || response.Elapsed <= 0 {
+		t.Fatal("a response body was reported before headers arrived")
 	}
 }
