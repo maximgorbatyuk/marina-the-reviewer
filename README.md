@@ -233,6 +233,11 @@ marinadoreview plan --input snapshot.json --system-prompt-file policy.txt --outp
 
 The baseline is Marina dev commit `acd37b498f1c9367b4044e8f9d5ad55b90617e59`, protocol v3, validation policy v2. Native documents include schema version, producer, baseline and schema digests.
 
+Response schema validation supports working directories with spaces and Unicode.
+It uses an absolute in-memory resource identifier, so local schema references do
+not depend on the process directory. Compilation failures retain their cause
+with configured credentials redacted.
+
 Offline validation accepts a `SignificantReviewPreparedBatch` plus raw model JSON or a `ReviewModelOutputArchive`:
 
 ```sh
