@@ -523,7 +523,7 @@ func routing(a arguments) (config.Config, config.Route, error) {
 		if a.baseURL == "" || a.model == "" {
 			return c, config.Route{}, errors.New("configure a provider or supply --base-url and --model")
 		}
-		c = config.Config{Version: 1, Routing: config.Routing{Primary: "request"}, Profiles: map[string]config.Profile{"request": {BaseURL: a.baseURL, Model: a.model, ContextLength: 131072}}}
+		c = config.Config{Version: 1, Routing: config.Routing{Primary: "request"}, Profiles: map[string]config.Profile{"request": {BaseURL: a.baseURL, Model: a.model, ContextLength: config.DefaultContextLength}}}
 	}
 	r, e := config.ResolveRouting(c, config.Overrides{Primary: a.profile, Fallback: a.fallback, NoFallback: a.noFallback, BaseURL: a.baseURL, Model: a.model, APIKey: a.apiKey, APIKeyEnv: a.apiKeyEnv, APIKeyFile: a.apiKeyFile, ContextLength: a.contextLength, MaximumOutputTokens: a.maxOutput})
 	return c, r, e

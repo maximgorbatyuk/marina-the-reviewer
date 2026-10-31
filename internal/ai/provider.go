@@ -64,6 +64,7 @@ func IsRetryable(err error) bool {
 
 func Complete(ctx context.Context, provider config.ProviderSnapshot, token string, input Request) (result Response, callErr error) {
 	started := time.Now()
+	defer func() { result.Elapsed = time.Since(started) }()
 	profile := provider.Profile
 	if input.MaximumOutputTokens < 1 || (profile.ContextLength > 0 && input.MaximumOutputTokens >= profile.ContextLength) {
 		return Response{}, &Error{Code: "configuration", Message: "invalid output token budget"}
@@ -143,7 +144,11 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
 			code = "timeout"
 		}
-		return Response{}, &Error{Code: code, Message: "provider request did not complete"}
+		message := "provider request did not complete"
+		if code == "timeout" {
+			message = fmt.Sprintf("provider request did not complete before its deadline (timeout %s; elapsed %d ms; no response headers)", timeout, time.Since(started).Milliseconds())
+		}
+		return Response{}, &Error{Code: code, Message: message}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -182,14 +187,21 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		result.RawResponse = string(data)
 		result.ResponsePayload = string(data)
 		result.ResponsePayloadTruncated = true
+		var partialReasoning string
 		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") || bytes.HasPrefix(bytes.TrimSpace(data), []byte("data:")) {
-			result.RawOutput, _, result.FinishReason, result.Usage, _ = parseSSE(data)
+			result.RawOutput, partialReasoning, result.FinishReason, result.Usage, _ = parseSSE(data)
 		}
 		if ctx.Err() != nil {
 			return result, ctx.Err()
 		}
 		if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
-			return result, &Error{Code: "timeout", Message: "provider response did not finish before its deadline"}
+			terminal := "absent"
+			if result.FinishReason != "" {
+				terminal = "present"
+			}
+			message := fmt.Sprintf("provider response did not finish before its deadline (timeout %s; elapsed %d ms; received %d bytes; content %d bytes; reasoning %d bytes; terminal finish reason %s)",
+				timeout, time.Since(started).Milliseconds(), len(data), len(result.RawOutput), len(partialReasoning), terminal)
+			return result, &Error{Code: "timeout", Message: message}
 		}
 		return result, &Error{Code: "network_error", Message: "provider response could not be read"}
 	}

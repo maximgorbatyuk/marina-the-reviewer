@@ -63,7 +63,7 @@ Replace the example endpoints and models. A configuration can hold multiple prof
       "baseUrl": "https://provider.example/v1",
       "model": "review-model",
       "apiKeyEnv": "REVIEW_API_KEY",
-      "contextLength": 131072,
+      "contextLength": 1048576,
       "responseFormat": "json_schema",
       "outputTokenParameter": "max_tokens",
       "maximumAttempts": 2,
@@ -74,7 +74,7 @@ Replace the example endpoints and models. A configuration can hold multiple prof
       "baseUrl": "https://backup-provider.example/v1",
       "model": "backup-review-model",
       "apiKeyEnv": "BACKUP_REVIEW_API_KEY",
-      "contextLength": 65536,
+      "contextLength": 1048576,
       "responseFormat": "json_object",
       "outputTokenParameter": "max_completion_tokens"
     }
@@ -84,7 +84,7 @@ Replace the example endpoints and models. A configuration can hold multiple prof
 
 Each profile accepts exactly one of `apiKey`, `apiKeyEnv`, or `apiKeyFile`. Configuration with literal tokens and token files must have private permissions (`0600`). `config init` creates its directory with `0700` and preserves an existing file. Environment references work well in CI; private token files avoid command-line token exposure.
 
-Other settings include `stream`, `maximumOutputTokens`, `maximumConcurrentRequests`, and `extraParameters`. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
+Other settings include `stream`, `maximumOutputTokens`, `maximumConcurrentRequests`, and `extraParameters`. New routes derive MiMo and DeepSeek output reserves from the model name, independently of the profile alias; an explicit `maximumOutputTokens` takes priority. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
 
 ## Review a change
 
@@ -149,7 +149,9 @@ marinadoreview review --repo . --base HEAD~1 --no-fallback \
 
 ## Recovery
 
-After bounded retries, network errors, timeouts, HTTP 429 and HTTP 5xx can switch an unfinished batch to the chosen fallback. Its budget is recalculated and source can be split. Completed batches are retained; other configured profiles are never tried automatically.
+After bounded retries, network errors, timeouts, HTTP 429 and HTTP 5xx can switch an unfinished batch to the chosen fallback. Its budget is recalculated and source can be split. Completed batches are retained; other configured profiles are never tried automatically. New profiles and omitted context lengths use 1,048,576 tokens; explicit contexts in saved profiles and plans remain unchanged.
+
+Timeout diagnostics distinguish missing response headers from an unfinished body. Body timeouts include elapsed time, received bytes, partial answer and reasoning byte counts, and whether a terminal finish reason arrived. These messages contain no provider text; the redacted response remains in the private archive.
 
 Authentication errors, invalid requests, invalid model output, rejected findings and cancellation do not trigger fallback. Invalid output can receive one correction. Context overflow can split a batch with replan depth limited to three. A correction that cannot fit the reserved context uses the same bounded split before sending a request. Switching providers preserves those counters. Resume does not repeat a request with an uncertain outcome after interruption; inspect the journal and start a fresh run if another request is wanted.
 
