@@ -28,13 +28,7 @@ func sanitizeJava(s string) string {
 	value, _ := sanitizeJavaContext(context.Background(), s)
 	return value
 }
-func javaTokens(s string) []javaToken {
-	value, _ := javaTokensContext(context.Background(), s)
-	return value
-}
-func matching(tokens []javaToken, start int, open, close string) int {
-	return matchingWithContext(context.Background(), tokens, start, open, close)
-}
+
 func javaIdentifier(v string) bool {
 	if v == "" {
 		return false
@@ -42,30 +36,20 @@ func javaIdentifier(v string) bool {
 	r := []rune(v)[0]
 	return unicode.IsLetter(r) || r == '_' || r == '$'
 }
-func declarationStart(tokens []javaToken, i int) int {
-	return declarationStartWithContext(context.Background(), tokens, i)
-}
-func declarationTokens(tokens []javaToken) []javaToken {
-	value, _ := declarationTokensContext(context.Background(), tokens)
-	return value
-}
+
 func sourceSlice(s SourceSnapshot, first, last int, complete bool) CodeSlice {
 	ls := lines(s.Content)
 	first = max(first, 1)
 	last = min(last, len(ls))
 	return CodeSlice{s.Path, s.Revision, first, last, strings.Join(ls[first-1:last], "\n"), first, last, complete}
 }
-func readJava(s SourceSnapshot) ([]javaSymbol, []javaUnit, []string) {
-	return readJavaWithUnicodePolicy(s, false)
-}
 
-func readJavaWithUnicodePolicy(s SourceSnapshot, allowInertEscapes bool) ([]javaSymbol, []javaUnit, []string) {
-	symbols, units, limits, _ := readJavaWithUnicodePolicyContext(context.Background(), s, allowInertEscapes)
-	return symbols, units, limits
-}
+// Analyze uses a background context for callers without cancellation support.
 func Analyze(snapshot Snapshot) (Document, error) {
 	return AnalyzeContext(context.Background(), snapshot)
 }
+
+// AnalyzeContext builds review blocks and dependency context from pinned source snapshots.
 func AnalyzeContext(ctx context.Context, snapshot Snapshot) (Document, error) {
 	return analyzeWithSelectionContext(ctx, snapshot, CurrentSelectionVersion)
 }
@@ -617,17 +601,17 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 				if err := ctx.Err(); err != nil {
 					return Document{}, err
 				}
-				copy := u.source
-				if copy.Revision == Base {
+				cloned := u.source
+				if cloned.Revision == Base {
 					if before != nil {
 						ambiguous = true
 					}
-					before = &copy
+					before = &cloned
 				} else {
 					if after != nil {
 						ambiguous = true
 					}
-					after = &copy
+					after = &cloned
 				}
 				if u.symbol >= 0 {
 					if id, found := graphIDs[a.symbols[u.symbol].node.SourceSymbolID]; found {
@@ -671,11 +655,11 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 					return Document{}, err
 				}
 				if u.kind == "imports" {
-					copy := u.source
+					cloned := u.source
 					if u.source.Revision == Base {
-						before = &copy
+						before = &cloned
 					} else {
-						after = &copy
+						after = &cloned
 					}
 				}
 			}

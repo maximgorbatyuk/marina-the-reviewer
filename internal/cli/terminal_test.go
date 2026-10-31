@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,7 +27,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
-func TestTerminalProcess(t *testing.T) {
+func TestTerminalProcess(_ *testing.T) {
 	if os.Getenv("MARINADOREVIEW_TEST_TERMINAL") != "1" {
 		return
 	}
@@ -43,10 +44,10 @@ func TestTerminalProcess(t *testing.T) {
 		fmt.Fprintln(os.Stderr, "Test usage recording failed:", err)
 		os.Exit(98)
 	}
-	fmt.Fprintf(os.Stdout, "\nTEST-EXIT:%d\n", code)
+	_, _ = fmt.Fprintf(os.Stdout, "\nTEST-EXIT:%d\n", code)
 	// Keep the session leader alive until the parent checks the terminal mode.
 	// macOS can revoke the terminal when the session leader exits.
-	io.ReadFull(os.Stdin, make([]byte, 1))
+	_, _ = io.ReadFull(os.Stdin, make([]byte, 1))
 	os.Exit(code)
 }
 
@@ -75,14 +76,14 @@ func startTerminal(t *testing.T, path string, args []string) *terminalSession {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(args)
-	cmd := exec.Command(os.Args[0], "-test.run=^TestTerminalProcess$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestTerminalProcess$")
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "MARINADOREVIEW_TEST_TERMINAL=1", "MARINADOREVIEW_TEST_ARGS="+string(encoded), "MARINADOREVIEW_CONFIG="+path, "GORACE=atexit_sleep_ms=0")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	s := &terminalSession{master: master, slave: slave, cmd: cmd, changed: make(chan struct{}, 1), done: make(chan struct{}), before: before}
 	if err := cmd.Start(); err != nil {
-		master.Close()
-		slave.Close()
+		_ = master.Close()
+		_ = slave.Close()
 		t.Fatal(err)
 	}
 	go func() {
@@ -108,11 +109,11 @@ func startTerminal(t *testing.T, path string, args []string) *terminalSession {
 		select {
 		case <-s.done:
 		default:
-			cmd.Process.Kill()
+			_ = cmd.Process.Kill()
 			<-s.done
 		}
-		master.Close()
-		slave.Close()
+		_ = master.Close()
+		_ = slave.Close()
 	})
 	return s
 }
@@ -144,7 +145,10 @@ func (s *terminalSession) waitForOutput(value string, start int, timeout time.Du
 		select {
 		case <-s.changed:
 		case <-s.done:
-			return fmt.Errorf("terminal exited before %q: %v\nterminal output:\n%s", value, s.err, ansi.Strip(s.text()))
+			if s.err != nil {
+				return fmt.Errorf("terminal exited before %q: %w\nterminal output:\n%s", value, s.err, ansi.Strip(s.text()))
+			}
+			return fmt.Errorf("terminal exited before %q\nterminal output:\n%s", value, ansi.Strip(s.text()))
 		case <-timer.C:
 			return fmt.Errorf("terminal did not show %q within %s\nterminal output:\n%s", value, timeout, ansi.Strip(s.text()))
 		}
@@ -165,7 +169,8 @@ func (s *terminalSession) exit(t *testing.T, code int) {
 	}
 	actual := 0
 	if s.err != nil {
-		if exit, ok := s.err.(*exec.ExitError); ok {
+		var exit *exec.ExitError
+		if errors.As(s.err, &exit) {
 			actual = exit.ExitCode()
 		} else {
 			t.Fatal(s.err)
@@ -181,11 +186,11 @@ func TestTUIBareInvocationConfiguresAndTestsProfile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			models.Add(1)
-			fmt.Fprint(w, `{"data":[{"id":"review-model"}]}`)
+			_, _ = fmt.Fprint(w, `{"data":[{"id":"review-model"}]}`)
 			return
 		}
 		probes.Add(1)
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}`)
+		_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"ok\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}`)
 	}))
 	defer server.Close()
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -224,8 +229,8 @@ func TestTUIBareInvocationConfiguresAndTestsProfile(t *testing.T) {
 
 func TestTUIInterruptCancelsRequestAndRestoresTerminal(t *testing.T) {
 	started, canceled := make(chan struct{}), make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.Copy(io.Discard, r.Body)
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		close(started)
 		<-r.Context().Done()
 		close(canceled)

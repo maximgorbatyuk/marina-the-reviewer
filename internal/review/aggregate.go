@@ -1,3 +1,4 @@
+// Package review binds review claims to pinned source evidence and records coverage limitations.
 package review
 
 import (
@@ -99,6 +100,8 @@ func duplicateHelpers(findings []Finding, witnesses []FindingWitness) []Duplicat
 	}
 	return out
 }
+
+// Aggregate merges validated batch results while retaining coverage gaps and duplicate decisions.
 func Aggregate(results []BatchResult, limitations []string, coverageComplete bool) BatchResult {
 	r := emptyResult()
 	r.IsComplete = coverageComplete

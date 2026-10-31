@@ -16,8 +16,10 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
 
+// ReviewArtifactBundleVersion identifies the bundle wire format for offline import and export.
 const ReviewArtifactBundleVersion = 2
 
+// ArtifactBundle binds content references and plan metadata so a review can move between machines.
 type ArtifactBundle struct {
 	SchemaVersion    int                            `json:"schemaVersion"`
 	Kind             string                         `json:"kind"`
@@ -40,6 +42,7 @@ type ArtifactBundle struct {
 	Entries          map[string]runstore.ContentRef `json:"entries"`
 }
 
+// BundlePlan stores plan identity with content references to avoid copying large source documents.
 type BundlePlan struct {
 	SchemaVersion   int                 `json:"schemaVersion"`
 	Kind            string              `json:"kind"`
@@ -53,6 +56,7 @@ type BundlePlan struct {
 	DeadlineSeconds int                 `json:"deadlineSeconds"`
 }
 
+// BundlePreparedPlan keeps batch references and coverage metadata together for bundle validation.
 type BundlePreparedPlan struct {
 	Version        int                   `json:"version"`
 	Purpose        int                   `json:"purpose"`
@@ -64,6 +68,7 @@ type BundlePreparedPlan struct {
 	SplitReason    *string               `json:"splitReason"`
 }
 
+// BundlePreparedBatch references prepared input content without duplicating it in the bundle manifest.
 type BundlePreparedBatch struct {
 	SchemaVersion  int                  `json:"schemaVersion"`
 	Kind           string               `json:"kind"`
@@ -71,6 +76,7 @@ type BundlePreparedBatch struct {
 	Batch          review.PreparedBatch `json:"batch"`
 }
 
+// BundleStore coordinates bundle state and content storage under one private directory.
 type BundleStore struct {
 	Directory string
 	Content   *runstore.ContentStore
@@ -78,6 +84,7 @@ type BundleStore struct {
 	document  review.Document
 }
 
+// BundleResourcePolicy bounds stored content and execution time when opening a bundle.
 type BundleResourcePolicy struct {
 	MaximumUniqueBytes int64 `json:"maximumUniqueBytes"`
 	MaximumParts       int   `json:"maximumParts"`
@@ -85,14 +92,17 @@ type BundleResourcePolicy struct {
 	DeadlineSeconds    int   `json:"deadlineSeconds"`
 }
 
+// DefaultBundleResourcePolicy provides bounded content and time limits for normal bundle operations.
 func DefaultBundleResourcePolicy() BundleResourcePolicy {
 	return BundleResourcePolicy{runstore.MaximumBundleBytes, runstore.MaximumContentParts, runstore.MaximumContentPartBytes, 3600}
 }
 
+// OpenBundle uses the default resource limits when opening private bundle storage.
 func OpenBundle(directory, invocation string) (*BundleStore, error) {
 	return OpenBundleWithPolicy(directory, invocation, DefaultBundleResourcePolicy())
 }
 
+// OpenBundleWithPolicy validates private bundle storage with explicit content and execution limits.
 func OpenBundleWithPolicy(directory, invocation string, policy BundleResourcePolicy) (*BundleStore, error) {
 	directory, err := filepath.Abs(directory)
 	if err != nil {
@@ -124,18 +134,22 @@ func OpenBundleWithPolicy(directory, invocation string, policy BundleResourcePol
 	return b, nil
 }
 
+// SaveManifest uses a background context for callers without cancellation support.
 func (b *BundleStore) SaveManifest() error {
 	return b.SaveManifestContext(context.Background())
 }
 
+// SaveManifestContext writes the manifest atomically so interrupted updates cannot replace it partially.
 func (b *BundleStore) SaveManifestContext(ctx context.Context) error {
 	return runstore.AtomicJSONContext(ctx, filepath.Join(b.Directory, "bundle.json"), b.Manifest)
 }
 
+// SaveSnapshot uses a background context for callers without cancellation support.
 func (b *BundleStore) SaveSnapshot(snapshot Snapshot) error {
 	return b.SaveSnapshotContext(context.Background(), snapshot)
 }
 
+// SaveSnapshotContext stores pinned source content for reproducible later review steps.
 func (b *BundleStore) SaveSnapshotContext(ctx context.Context, snapshot Snapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -152,10 +166,12 @@ func (b *BundleStore) SaveSnapshotContext(ctx context.Context, snapshot Snapshot
 	return b.SaveManifestContext(ctx)
 }
 
+// Snapshot uses a background context for callers without cancellation support.
 func (b *BundleStore) Snapshot() (Snapshot, error) {
 	return b.SnapshotContext(context.Background())
 }
 
+// SnapshotContext reconstructs pinned source data from validated bundle content references.
 func (b *BundleStore) SnapshotContext(ctx context.Context) (Snapshot, error) {
 	var snapshot Snapshot
 	if err := ctx.Err(); err != nil {
@@ -174,10 +190,12 @@ func (b *BundleStore) SnapshotContext(ctx context.Context) (Snapshot, error) {
 	return snapshot, review.ValidateSnapshotContext(ctx, snapshot.Snapshot)
 }
 
+// SharedDocument uses a background context for callers without cancellation support.
 func (b *BundleStore) SharedDocument() (Document, error) {
 	return b.SharedDocumentContext(context.Background())
 }
 
+// SharedDocumentContext reconstructs shared analysis content so batches use the same source baseline.
 func (b *BundleStore) SharedDocumentContext(ctx context.Context) (Document, error) {
 	var document Document
 	if err := ctx.Err(); err != nil {
@@ -199,15 +217,18 @@ func (b *BundleStore) SharedDocumentContext(ctx context.Context) (Document, erro
 	return document, nil
 }
 
+// PackPrepared moves prepared batch content into the bundle to avoid repeated inline storage.
 func (b *BundleStore) PackPrepared(prepared review.PreparedBatch) (runstore.ContentRef, error) {
 	prepared.Input.Graph = review.Graph{Nodes: []review.GraphNode{}, Edges: []review.GraphEdge{}, Limitations: []string{}, Sha256: prepared.Input.Graph.Sha256}
 	return b.Content.PutJSON(BundlePreparedBatch{2, "ReviewPreparedBatch", b.Manifest.Entries["document"].Sha256, prepared})
 }
 
+// ReadPrepared uses a background context for callers without cancellation support.
 func (b *BundleStore) ReadPrepared(ref runstore.ContentRef) (review.PreparedBatch, error) {
 	return b.ReadPreparedContext(context.Background(), ref)
 }
 
+// ReadPreparedContext resolves prepared batch references and verifies the stored content.
 func (b *BundleStore) ReadPreparedContext(ctx context.Context, ref runstore.ContentRef) (review.PreparedBatch, error) {
 	var stored BundlePreparedBatch
 	if err := ctx.Err(); err != nil {
@@ -239,10 +260,12 @@ func (b *BundleStore) ReadPreparedContext(ctx context.Context, ref runstore.Cont
 	return batch, nil
 }
 
+// SavePlan uses a background context for callers without cancellation support.
 func (b *BundleStore) SavePlan(plan Plan) error {
 	return b.SavePlanContext(context.Background(), plan)
 }
 
+// SavePlanContext stores prepared inputs and plan identity for reproducible execution and resume.
 func (b *BundleStore) SavePlanContext(ctx context.Context, plan Plan) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -343,10 +366,12 @@ func (b *BundleStore) SavePlanContext(ctx context.Context, plan Plan) error {
 	return b.SaveManifestContext(ctx)
 }
 
+// LoadPlan uses a background context for callers without cancellation support.
 func (b *BundleStore) LoadPlan() (Plan, error) {
 	return b.LoadPlanContext(context.Background())
 }
 
+// LoadPlanContext validates saved plan metadata and resolves its content references.
 func (b *BundleStore) LoadPlanContext(ctx context.Context) (Plan, error) {
 	var plan Plan
 	if err := ctx.Err(); err != nil {
@@ -406,10 +431,12 @@ func (b *BundleStore) LoadPlanContext(ctx context.Context) (Plan, error) {
 	return plan, plan.ValidateContext(ctx)
 }
 
+// RecoverPlanMetadata uses a background context for callers without cancellation support.
 func (b *BundleStore) RecoverPlanMetadata() (bool, error) {
 	return b.RecoverPlanMetadataContext(context.Background())
 }
 
+// RecoverPlanMetadataContext restores plan metadata from the manifest when standalone metadata is unavailable.
 func (b *BundleStore) RecoverPlanMetadataContext(ctx context.Context) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -454,6 +481,7 @@ func (b *BundleStore) RecoverPlanMetadataContext(ctx context.Context) (bool, err
 	return true, b.SaveManifestContext(ctx)
 }
 
+// SaveResult stores the execution result so later commands do not need to rerun inference.
 func (b *BundleStore) SaveResult(result Result) error {
 	result.Producer = b.Manifest.Producer
 	ref, err := b.Content.PutJSON(result)
@@ -466,10 +494,6 @@ func (b *BundleStore) SaveResult(result Result) error {
 }
 
 // Each collection is encoded separately to avoid a full document-sized JSON buffer.
-func (b *BundleStore) putDocument(document Document) (runstore.ContentRef, error) {
-	return b.putDocumentContext(context.Background(), document)
-}
-
 func (b *BundleStore) putDocumentContext(ctx context.Context, document Document) (runstore.ContentRef, error) {
 	reader, writer := io.Pipe()
 	done := make(chan error, 1)
@@ -609,10 +633,12 @@ func writeArray[T any](writer io.Writer, values []T) error {
 	return err
 }
 
+// PlanBytes uses a background context for callers without cancellation support.
 func (b *BundleStore) PlanBytes() ([]byte, error) {
 	return b.PlanBytesContext(context.Background())
 }
 
+// PlanBytesContext reads the stored plan bytes without reconstructing source and batch content.
 func (b *BundleStore) PlanBytesContext(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

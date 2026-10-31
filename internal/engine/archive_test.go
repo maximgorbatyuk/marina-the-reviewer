@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
@@ -21,15 +22,18 @@ import (
 func TestExecutionArchiveKeepsRejectedTextAndUsageIdentity(t *testing.T) {
 	const secret = "archive-private-token"
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if calls.Add(1) == 1 {
-			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": `{"broken":"\u0061rchive-private-token`}, "finish_reason": "length"}}, "usage": map[string]int{"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}})
+			if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": `{"broken":"\u0061rchive-private-token`}, "finish_reason": "length"}}, "usage": map[string]int{"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}}); err != nil {
+				t.Error(err)
+			}
 			return
 		}
 		okModel(w)
 	}))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
+	route.Primary.Profile.Provider = config.ProviderGroq
 	route.RuntimeSecrets = map[string]string{route.Primary.Name: secret}
 	plan, err := BuildDocument(document(), route, "", nil)
 	if err != nil {
@@ -78,6 +82,9 @@ func TestExecutionArchiveKeepsRejectedTextAndUsageIdentity(t *testing.T) {
 	}
 	ids := map[string]bool{}
 	for _, event := range snapshot.Events {
+		if event.ProviderKind != "groq" {
+			t.Fatal("review or correction lost the selected provider kind")
+		}
 		ids[event.ID] = true
 	}
 	if !ids[first.RequestID] || !ids[correction.RequestID] {
@@ -94,9 +101,11 @@ func TestExecutionArchiveKeepsRejectedTextAndUsageIdentity(t *testing.T) {
 
 func TestExecutionArchiveMasksTokenAfterBackslash(t *testing.T) {
 	const secret = "token-private-canary"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		output, _ := json.Marshal(map[string]any{"checkedBlockIds": []string{"b1"}, "findings": []any{}, "strengths": []any{}, "unconfirmedDependencies": []string{`\` + secret}})
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": string(output)}, "finish_reason": "stop"}}})
+		if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": string(output)}, "finish_reason": "stop"}}}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
@@ -125,7 +134,7 @@ func TestExecutionArchiveMasksTokenAfterBackslash(t *testing.T) {
 
 func TestExecutionArchiveExportsInterruptedRequestWithoutInference(t *testing.T) {
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); okModel(w) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); okModel(w) }))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
 	plan, err := BuildDocument(document(), route, "", nil)
@@ -159,7 +168,7 @@ func TestExecutionArchiveExportsInterruptedRequestWithoutInference(t *testing.T)
 }
 
 func TestExecutionArchiveRejectsCorruptOrChangedPlan(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { okModel(w) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { okModel(w) }))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
 	plan, err := BuildDocument(document(), route, "", nil)
@@ -236,10 +245,10 @@ func TestExecutionArchiveAboveInputLimitRoundTripsStateAndExport(t *testing.T) {
 
 func TestExecutionArchivePreservesProviderFailureBody(t *testing.T) {
 	const secret = "failure-secret"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", "3")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error":"\u0066ailure-secret denied"}`))
+		_, _ = w.Write([]byte(`{"error":"\u0066ailure-secret denied"}`))
 	}))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
@@ -266,7 +275,7 @@ func TestPrettyAndCompactSavedPlansKeepPhysicalHashAcrossResume(t *testing.T) {
 	for _, compact := range []bool{false, true} {
 		t.Run(map[bool]string{false: "legacy-pretty", true: "large-compact"}[compact], func(t *testing.T) {
 			var calls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); okModel(w) }))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); okModel(w) }))
 			defer server.Close()
 			cfg, route := routeFor(t, server.URL, "")
 			plan, err := BuildDocument(document(), route, "", nil)

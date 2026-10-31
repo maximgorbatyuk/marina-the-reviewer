@@ -144,9 +144,9 @@ func TestRetentionBoundaryAndLateFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var count int
-	if err := db.QueryRow("SELECT count(*) FROM api_requests WHERE request_id = '1'").Scan(&count); err != nil || count != 0 {
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM api_requests WHERE request_id = '1'").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("expired request returned: %d %v", count, err)
 	}
 }
@@ -236,12 +236,14 @@ func TestStoreRejectsSymlinksAndForeignDatabases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("CREATE TABLE unrelated (value TEXT); INSERT INTO unrelated VALUES ('keep')"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "CREATE TABLE unrelated (value TEXT); INSERT INTO unrelated VALUES ('keep')"); err != nil {
 		t.Fatal(err)
 	}
-	db.Close()
+	_ = db.Close()
 	foreign := filepath.Join(dir, "foreign.sqlite3")
-	os.Chmod(foreign, 0600)
+	if err := os.Chmod(foreign, 0600); err != nil {
+		t.Error(err)
+	}
 	before, _ := os.ReadFile(foreign)
 	if _, err := (Store{Path: foreign, Now: fixedTime}).Snapshot(fixedTime()); err == nil {
 		t.Fatal("foreign database accepted")

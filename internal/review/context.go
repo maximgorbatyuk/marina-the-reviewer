@@ -8,9 +8,6 @@ import (
 	"strings"
 )
 
-func containsNode(b Block, n GraphNode) bool {
-	return (slices.Contains(b.SymbolIDs, n.ID) || slices.Contains(b.SymbolIDs, n.SourceSymbolID)) && (intersects(n, b.Base) || intersects(n, b.Head))
-}
 func sliceKey(s CodeSlice) string {
 	return fmt.Sprintf("%s|%d|%d|%d", s.Path, s.Revision, s.StartLine, s.EndLine)
 }
@@ -57,9 +54,7 @@ func (index *contextIndex) normalize(batch Batch) Batch {
 	}
 	return batch
 }
-func findBody(d Document, n GraphNode) *CodeSlice {
-	return newContextIndex(d).findBody(n)
-}
+
 func (index *contextIndex) findBody(n GraphNode) *CodeSlice {
 	for _, source := range index.sources[contextSourceKey{n.Path, n.Revision}] {
 		if index.operationErr() != nil {

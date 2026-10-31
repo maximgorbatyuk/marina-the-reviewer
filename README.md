@@ -11,7 +11,7 @@ brew install maximgorbatyuk/tap/marina-the-reviewer
 marinadoreview --version --json
 ```
 
-Release archives support macOS and Linux on arm64 and amd64. The Homebrew formula builds the release from source. Git is required. To build locally, use Go 1.27.1 or later:
+Release archives support macOS and Linux on arm64 and amd64. The Homebrew formula builds the release from source. Git is required. To build locally, use Go 1.27.1 or later and install [golangci-lint](https://golangci-lint.run/docs/welcome/install/local/) at the version in `.golangci-lint-version`:
 
 ```sh
 make build
@@ -27,11 +27,11 @@ marinadoreview
 marinadoreview --config ./config.local.json
 ```
 
-The home screen shows the version, configuration path, and primary/fallback status. Open **Providers and routing** to create or edit profiles. Choose an AI provider preset (OpenAI, OpenRouter, DeepSeek, Groq, Ollama, or another OpenAI-compatible API), enter the API URL and authorization source, then load the model list or type a model ID. The model list depends on the server; manual entry remains available when listing is unsupported or unavailable.
+The home screen shows the version, configuration path, and primary/fallback status. Open **Providers and routing** to create or edit profiles. Choose an AI provider preset (OpenAI, OpenRouter, DeepSeek, Groq, Ollama, Xiaomi MiMo, or another OpenAI-compatible API), enter the API URL and authorization source, then load the model list or type a model ID. The model list depends on the server; manual entry remains available when listing is unsupported or unavailable.
 
 Paste an API token into its masked field, select an environment variable or private token file, or explicitly select no authorization for a suitable local server. A blank replacement preserves a saved token. Selecting an authorization source again clears its saved value; changing the API URL requires entering credentials again. Tokens and extra parameter values are hidden in the configuration viewer.
 
-**Test connection** sends one small AI request to the selected model using its JSON settings. It can use billed tokens, sends no source code, and does not retry or switch to fallback. A successful model-list request does not prove inference access. The status shows the last test time and duration; changes reset it, and a new session starts as untested. A small successful test does not guarantee a complete code review or support for every response schema. Offline configuration is supported without a successful test.
+**Test connection** sends one small AI request to the selected model using its JSON settings and configured request timeout. It can use billed tokens, sends no source code, and does not retry or switch to fallback. A successful model-list request does not prove inference access. The status shows the last test time and duration; changes reset it, and a new session starts as untested. A small successful test does not guarantee a complete code review or support for every response schema. Offline configuration is supported without a successful test.
 
 Apply profile edits to the draft, then press `s` in Providers to save. Use `p` to assign the selected profile as primary, `f` for fallback, and `d` to disable fallback. Other profiles remain saved. Advanced settings expose JSON mode, token/context limits, timeout, retries, concurrency and streaming; existing extra parameters remain intact. Save validates the whole configuration and writes it atomically with private permissions. If the file changed externally, reload it before saving.
 
@@ -67,7 +67,7 @@ Replace the example endpoints and models. A configuration can hold multiple prof
       "responseFormat": "json_schema",
       "outputTokenParameter": "max_tokens",
       "maximumAttempts": 2,
-      "timeoutSeconds": 300
+      "timeoutSeconds": 3300
     },
     "backup": {
       "backend": "openai-compatible",
@@ -84,7 +84,35 @@ Replace the example endpoints and models. A configuration can hold multiple prof
 
 Each profile accepts exactly one of `apiKey`, `apiKeyEnv`, or `apiKeyFile`. Configuration with literal tokens and token files must have private permissions (`0600`). `config init` creates its directory with `0700` and preserves an existing file. Environment references work well in CI; private token files avoid command-line token exposure.
 
-Other settings include `stream`, `maximumOutputTokens`, `maximumConcurrentRequests`, and `extraParameters`. New routes derive MiMo and DeepSeek output reserves from the model name, independently of the profile alias; an explicit `maximumOutputTokens` takes priority. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
+The AI request timeout defaults to **3300 seconds**. `plan` and `review` accept
+`--request-timeout-seconds SECONDS` to replace the timeout for both primary and
+fallback. The argument takes precedence over the selected profiles. Without it,
+explicit profile timeouts remain in effect. A saved plan retains its timeout;
+`run` rejects an override. The total review deadline is a separate budget and
+can end a request before its per-request timeout.
+If a configured fallback is allowed and the remaining deadline cannot fit a full
+primary retry plus its backoff, the CLI selects fallback instead of spending that
+window on another primary attempt. Without fallback, the retry policy is unchanged.
+
+For a selected MiMo model, the **Xiaomi MiMo** preset uses `stream=true`, `response_format=json_object`,
+`max_completion_tokens`, and `thinking.type=enabled`, as the Marina HTTP client
+does. JSON mode puts the review schema in the system message. It keeps the
+1,048,576-token context and the 131,072-token output budget. Direct MiMo model
+arguments with `--provider xiaomi-mimo` use these same defaults when no configuration file exists. Existing configured profiles keep their
+explicit wire settings; update those profiles when migrating from other defaults.
+
+Profiles store an optional `provider` enum: `openai`, `openrouter`, `xiaomi-mimo`,
+`deepseek`, `groq`, `ollama`, or `openai-compatible`. The provider identity is
+independent of the profile name, model ID, and API URL. TUI provider selection
+saves this value and restores it for custom endpoints. Existing profiles and
+saved plans without a provider identity retain their settings. The `backend`
+field still selects the `openai-compatible` transport.
+Xiaomi MiMo uses `https://token-plan-sgp.xiaomimimo.com/v1` when no URL is supplied.
+The TUI URL field, profile `baseUrl`, and `--base-url` argument can select another
+HTTPS endpoint. An explicit URL is retained; credentials still follow their
+configured endpoint scope.
+
+Other settings include `stream`, `maximumOutputTokens`, `maximumConcurrentRequests`, and `extraParameters`. Routes use the provider enum for MiMo and DeepSeek output reserves. Legacy profiles without this identity retain model-based detection; an explicit `maximumOutputTokens` takes priority. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
 
 ## Review a change
 
@@ -131,7 +159,7 @@ marinadoreview run --input plan.json --run-dir ./review-run/my-change \
 marinadoreview archive --run-dir ./review-run/my-change --output recovered-archive.json
 ```
 
-`capabilities --json` reports `executionArchiveVersion: 1`. The archive has kind `ReviewExecutionArchive` and includes the native result, source commit IDs, the semantic plan hash, the SHA-256 of the saved `plan.json` bytes, work lineage, prepared inputs, candidate audit and each attempt. Attempts include a physical request ID shared with token statistics, the actual HTTP request and response payloads, model output as a string, usage, finish reason and safe diagnostics. Invalid or truncated model text remains a string. Credentials are redacted, including JSON-escaped values. A bounded response prefix is marked with `responsePayloadTruncated` when the full body is unavailable.
+`capabilities --json` reports `executionArchiveVersion: 1`. The archive has kind `ReviewExecutionArchive` and includes the native result, source commit IDs, the semantic plan hash, the SHA-256 of the saved `plan.json` bytes, work lineage, prepared inputs, candidate audit and each attempt. Attempts include a physical request ID shared with token statistics, the actual HTTP request and response payloads, model output as a string, usage, finish reason and safe diagnostics. Invalid or truncated model text remains a string. Credentials are redacted, including JSON-escaped values. HTTP bodies are read without an application size cutoff. `responsePayloadTruncated` marks a response that the transport did not finish reading; every received byte is retained. Archive and run-state document size limits still apply.
 
 The `archive` command reads a saved run without provider configuration or an AI request. It requires the run to be unlocked and rejects a changed plan or corrupt state. It can recover the native result when `result.json` was not written. A request interrupted before its final state was saved is reported as `unknown`; export does not retry it. Use the same saved plan and run directory to resume execution. Running `review` again creates a new plan and new review IDs.
 
@@ -172,7 +200,15 @@ Token counters sum API-reported input, output and total tokens. If total is abse
 
 A code review is one logical `runId/passId`. Retry, fallback and resume update that review; they do not create another one. Reports show complete, partial, failed, canceled and unfinished reviews, checked blocks, finding counts by severity and average duration of finished reviews. Duration is wall-clock time from the first execution, including pauses before resume. Findings that trigger `--fail-on` do not make a completed review technically failed. An abrupt process exit can leave an unfinished review with an unknown final outcome. Review statistics begin with this update; old token records cannot reconstruct them.
 
-Statistics are stored in `os.UserConfigDir()/marina-the-reviewer/stats.sqlite3`. On macOS this is `~/Library/Application Support/marina-the-reviewer/stats.sqlite3`. `MARINADOREVIEW_DB_FILE` selects another SQLite file, independently of `--config`. The parent directory must be private and owned by the current user; newly created application directories use `0700`, and database, lock and SQLite sidecar files use `0600`. No database is created for empty-history queries or offline commands. The database stores counts and request/review metadata without API keys, prompts, source code, finding text or model output. History is local; provider billing and other applications are not queried.
+Statistics and provider exchanges are stored in `os.UserConfigDir()/marina-the-reviewer/stats.sqlite3`. On macOS this is `~/Library/Application Support/marina-the-reviewer/stats.sqlite3`. `MARINADOREVIEW_DB_FILE` selects another SQLite file, independently of `--config`. The parent directory must be private and owned by the current user; newly created application directories use `0700`, and database, lock and SQLite sidecar files use `0600`. No database is created for empty-history queries or offline commands. History is local; provider billing and other applications are not queried.
+
+Each `api_requests` row stores provider, profile and model metadata plus `request_url`, `request_payload`, `response_payload`, `http_status` and `response_complete`. Payloads are BLOBs containing the complete HTTP body bytes after API-key redaction, including JSON-escaped keys. Prompts, source code and model output are retained in these bodies. Requests are saved before the HTTP call, and successful responses, invalid model answers, HTTP errors and interrupted bodies are recorded when the call finishes. No application size limit truncates the stored bodies. `response_complete` is `1` after a full body read, `0` after a read failure, and `NULL` if no response was captured. `http_status` is `0` when no response headers were captured. Usage reports select metadata only and do not load or expose payloads.
+
+`provider_kind` records the explicitly selected provider type from the saved profile for each physical call, such as `xiaomi-mimo`, `deepseek` or `openai-compatible`. It is saved before sending the request, including retries, corrections, fallback calls and TUI connection tests. It does not depend on the endpoint, profile alias, model name or the `openai-compatible` backend protocol. An unspecified type is stored as SQL `NULL`; explicitly choosing `openai-compatible` stores that exact value. The existing `provider` display name is still derived from the endpoint, and usage grouping remains based on the normalized endpoint.
+
+Existing version 1 SQLite databases migrate automatically in a transaction. Their history is preserved; old rows have an empty `request_url`, `NULL` payloads and `response_complete`, and `http_status=0`. Older CLI versions cannot use the upgraded schema. Close older versions before using the new CLI.
+
+SQLite schema version 3 adds `provider_kind`. Databases at versions 1 and 2 migrate automatically to version 3 in a transaction. Existing rows retain their metadata and payloads and receive `provider_kind=NULL`; the previous provider selection cannot be recovered from an endpoint or the current configuration. Old JSONL records also retain an unknown provider kind. Binaries that only support schema versions 1 or 2 cannot use the upgraded database.
 
 History is retained for **90 days**. Expired rows are removed during storage access, with maintenance at most once per day. If the CLI is closed, cleanup runs on the next access. Free pages are reused and reclaimed incrementally; database size depends on activity within the retained window. This cleanup does not delete provider configurations, review output, or `review-run` files needed for resume.
 
@@ -245,8 +281,15 @@ Token counts are conservative estimates, not provider tokenizer results. Plannin
 ## Development
 
 ```sh
+make fmt
+make lint-config
+make lint
 make verify
 go run scripts/generate_schemas.go
 ```
+
+`make fmt` applies `gofmt` and `goimports`. `make lint-config` validates the configuration against the pinned linter's schema. `make lint` validates that configuration, then checks formatting, the standard golangci-lint rules, and `revive` without changing files. Both `make build` and `make verify` require lint to pass before they run. CI installs the pinned linter and runs `make verify` on Linux and macOS. Set `GOLANGCI_LINT=/path/to/golangci-lint` to use a binary outside `PATH`.
+
+The reliability checks also cover HTTP body closure, SQL row closure and iteration errors, wrapped error handling, context-aware operations, nested context lifetimes, duration arithmetic, host and port formatting, compiler directives, and bidirectional Unicode controls. `errcheck` checks type assertions; `govet` also checks error comparisons through reflection and impossible nil conditions. `nolint` directives must name the linter and explain the reason; `revive` disable directives must also name the rule and explain the reason. The standard `revive` rules remain enabled.
 
 Tests use synthetic fixtures, temporary Git repositories and local fake AI servers. No token, paid request, Marina service or database is needed. See [RELEASING.md](RELEASING.md) for publication. MIT license: [LICENSE](LICENSE).

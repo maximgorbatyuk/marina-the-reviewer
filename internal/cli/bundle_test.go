@@ -28,7 +28,7 @@ func TestBundleReviewUsesOneCommandAndNeverRepeatsCompletedInference(t *testing.
 	}
 	git := func(args ...string) string {
 		t.Helper()
-		command := exec.Command("git", append([]string{"-C", repository}, args...)...)
+		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", repository}, args...)...)
 		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 		data, err := command.CombinedOutput()
 		if err != nil {
@@ -135,7 +135,10 @@ func TestBundleReviewUsesOneCommandAndNeverRepeatsCompletedInference(t *testing.
 	_ = json.Unmarshal(archive.Attempts[0], &fields)
 	var ref runstore.ContentRef
 	_ = json.Unmarshal(attempt.RequestPayloadRef, &ref)
-	actual := requestBody.Load().(string)
+	actual, ok := requestBody.Load().(string)
+	if !ok {
+		t.Fatal("request body was not captured as text")
+	}
 	expectedHash := sha256.Sum256([]byte(actual))
 	stored, err := bundle.Content.Bytes(ref)
 	if err != nil || string(stored) != actual || ref.Sha256 != hex.EncodeToString(expectedHash[:]) {
@@ -181,13 +184,13 @@ func TestBundleReviewUsesOneCommandAndNeverRepeatsCompletedInference(t *testing.
 func TestBundlePrepareFailureKeepsPinnedIdentityAndOriginalDiagnostic(t *testing.T) {
 	directory := t.TempDir()
 	repository := filepath.Join(directory, "objects.git")
-	command := exec.Command("git", "init", "--bare", repository)
+	command := exec.CommandContext(t.Context(), "git", "init", "--bare", repository)
 	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 	if data, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %s %v", data, err)
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(500) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); w.WriteHeader(500) }))
 	defer server.Close()
 	config := filepath.Join(directory, "provider.json")
 	if err := os.WriteFile(config, []byte(`{"version":1,"routing":{"primary":"local"},"profiles":{"local":{"baseUrl":"`+server.URL+`","model":"fake","contextLength":65536}}}`), 0600); err != nil {

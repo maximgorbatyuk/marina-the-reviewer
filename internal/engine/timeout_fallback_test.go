@@ -9,9 +9,98 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 )
+
+func TestTimeoutRetryDoesNotConsumeFallbackDeadline(t *testing.T) {
+	assertShortDeadlineFallback(t, false)
+}
+
+func TestRetryAfterDoesNotConsumeFallbackDeadline(t *testing.T) {
+	assertShortDeadlineFallback(t, true)
+}
+
+func assertShortDeadlineFallback(t *testing.T, rateLimit bool) {
+	t.Helper()
+	var primaryCalls, fallbackCalls atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryCalls.Add(1)
+		if rateLimit {
+			w.Header().Set("Retry-After", "30")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"working\"}}]}\n\n"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		} else {
+			t.Error("test response writer does not support flushing")
+			return
+		}
+		<-r.Context().Done()
+	}))
+	defer primary.Close()
+	fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fallbackCalls.Add(1)
+		var request struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Messages) != 2 {
+			t.Errorf("invalid fallback request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var input struct {
+			Batch struct {
+				Blocks []struct {
+					ID string `json:"id"`
+				} `json:"blocks"`
+			} `json:"batch"`
+		}
+		if err := json.Unmarshal([]byte(request.Messages[1].Content), &input); err != nil {
+			t.Error(err)
+			return
+		}
+		var ids []string
+		for _, block := range input.Batch.Blocks {
+			ids = append(ids, block.ID)
+		}
+		recoveryResponse(w, recoveryOutput(ids, ""))
+	}))
+	defer fallback.Close()
+	cfg, _ := routeFor(t, primary.URL, fallback.URL)
+	p := cfg.Profiles["primary"]
+	p.TimeoutSeconds, p.MaximumAttempts, p.Stream = 1, 2, true
+	p.ContextLength, p.MaximumOutputTokens = 262144, 4096
+	cfg.Profiles["primary"] = p
+	p = cfg.Profiles["backup"]
+	p.ContextLength, p.MaximumOutputTokens = 262144, 4096
+	cfg.Profiles["backup"] = p
+	cfg.Routing.FallbackOn = []string{"timeout", "rate_limit"}
+	route, err := config.ResolveRouting(cfg, config.Overrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildDocument(recoveryDocument(), route, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	directory := filepath.Join(t.TempDir(), "run")
+	result, err := Run(ctx, plan, cfg, directory)
+	if err != nil || result.Status != "complete" || primaryCalls.Load() != 1 || fallbackCalls.Load() != 1 || len(result.Result.CheckedBlockIDs) != len(plan.Document.Blocks) {
+		t.Fatalf("retry consumed the fallback window: status=%s error=%v primary=%d fallback=%d", result.Status, err, primaryCalls.Load(), fallbackCalls.Load())
+	}
+	if _, err := Run(context.Background(), plan, cfg, directory); err != nil || primaryCalls.Load() != 1 || fallbackCalls.Load() != 1 {
+		t.Fatalf("resume repeated inference after the deadline decision: %v", err)
+	}
+}
 
 func TestStreamingTimeoutRetriesThenReplansForConfiguredFallback(t *testing.T) {
 	for _, disabled := range []bool{false, true} {
@@ -20,8 +109,13 @@ func TestStreamingTimeoutRetriesThenReplansForConfiguredFallback(t *testing.T) {
 			primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				primaryCalls.Add(1)
 				w.Header().Set("Content-Type", "text/event-stream")
-				w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"continued analysis\",\"content\":\"partial\"}}]}\n\n"))
-				w.(http.Flusher).Flush()
+				_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"continued analysis\",\"content\":\"partial\"}}]}\n\n"))
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				} else {
+					t.Error("test response writer does not support flushing")
+					return
+				}
 				<-request.Context().Done()
 			}))
 			defer primary.Close()

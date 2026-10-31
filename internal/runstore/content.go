@@ -1,3 +1,4 @@
+// Package runstore protects private review artifacts with ownership checks, bounded reads, and atomic writes.
 package runstore
 
 import (
@@ -15,23 +16,31 @@ import (
 	"strings"
 )
 
+// MaximumContentPartBytes bounds individual content parts so large bundles remain readable with limited memory.
 const MaximumContentPartBytes = 4 << 20
 const contentContextChunkBytes = 64 << 10
+
+// MaximumBundleBytes bounds total stored content to reject unbounded bundle growth.
 const MaximumBundleBytes int64 = 1 << 30
+
+// MaximumContentParts bounds the number of content references accepted by bundle storage.
 const MaximumContentParts = 4096
 
+// ContentPart binds a stored content segment to its digest and uncompressed size.
 type ContentPart struct {
 	Sha256     string `json:"sha256"`
 	ByteLength int64  `json:"byteLength"`
 	File       string `json:"file"`
 }
 
+// ContentRef describes how verified parts reconstruct one stored content value.
 type ContentRef struct {
 	Sha256     string        `json:"sha256"`
 	ByteLength int64         `json:"byteLength"`
 	Parts      []ContentPart `json:"parts"`
 }
 
+// ContentStore stores private content by digest to avoid duplicating large review inputs.
 type ContentStore struct {
 	Directory   string
 	uniqueBytes int64
@@ -39,19 +48,23 @@ type ContentStore struct {
 	Limits      ContentLimits
 }
 
+// ContentLimits bounds individual parts and total bundle content before it is accepted.
 type ContentLimits struct {
 	MaximumUniqueBytes int64 `json:"maximumUniqueBytes"`
 	MaximumParts       int   `json:"maximumParts"`
 }
 
+// DefaultContentLimits provides bounded storage limits for normal review artifacts.
 func DefaultContentLimits() ContentLimits {
 	return ContentLimits{MaximumBundleBytes, MaximumContentParts}
 }
 
+// NewContentStore uses the default storage limits when opening private content storage.
 func NewContentStore(directory string) (*ContentStore, error) {
 	return NewContentStoreWithLimits(directory, DefaultContentLimits())
 }
 
+// NewContentStoreWithLimits opens private content storage with explicit resource limits.
 func NewContentStoreWithLimits(directory string, limits ContentLimits) (*ContentStore, error) {
 	if limits.MaximumUniqueBytes < 1 || limits.MaximumParts < 1 {
 		return nil, errors.New("bundle resource limits must be positive")
@@ -91,10 +104,12 @@ func NewContentStoreWithLimits(directory string, limits ContentLimits) (*Content
 	return store, nil
 }
 
+// Put uses a background context for callers without cancellation support.
 func (s *ContentStore) Put(input io.Reader) (ContentRef, error) {
 	return s.PutContext(context.Background(), input)
 }
 
+// PutContext stores content parts with digests so readers can verify reconstructed bytes.
 func (s *ContentStore) PutContext(ctx context.Context, input io.Reader) (ContentRef, error) {
 	if err := ctx.Err(); err != nil {
 		return ContentRef{}, err
@@ -166,18 +181,22 @@ func (s *ContentStore) PutContext(ctx context.Context, input io.Reader) (Content
 	return ref, nil
 }
 
+// PutText uses a background context for callers without cancellation support.
 func (s *ContentStore) PutText(value string) (ContentRef, error) {
 	return s.PutTextContext(context.Background(), value)
 }
 
+// PutTextContext stores text through the same verified content path used by other artifacts.
 func (s *ContentStore) PutTextContext(ctx context.Context, value string) (ContentRef, error) {
 	return s.PutContext(ctx, strings.NewReader(value))
 }
 
+// PutJSON uses a background context for callers without cancellation support.
 func (s *ContentStore) PutJSON(value any) (ContentRef, error) {
 	return s.PutJSONContext(context.Background(), value)
 }
 
+// PutJSONContext serializes a document before placing it in verified content storage.
 func (s *ContentStore) PutJSONContext(ctx context.Context, value any) (ContentRef, error) {
 	if err := ctx.Err(); err != nil {
 		return ContentRef{}, err
@@ -192,10 +211,12 @@ func (s *ContentStore) PutJSONContext(ctx context.Context, value any) (ContentRe
 	return s.PutContext(ctx, bytes.NewReader(append(raw, '\n')))
 }
 
+// Reader uses a background context for callers without cancellation support.
 func (s *ContentStore) Reader(ref ContentRef) (io.ReadCloser, error) {
 	return s.ReaderContext(context.Background(), ref)
 }
 
+// ReaderContext streams verified content parts without requiring a full in-memory copy.
 func (s *ContentStore) ReaderContext(ctx context.Context, ref ContentRef) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -219,23 +240,27 @@ func (s *ContentStore) ReaderContext(ctx context.Context, ref ContentRef) (io.Re
 	return &contentReader{ctx: ctx, store: s, ref: ref, digest: sha256.New()}, nil
 }
 
+// Bytes uses a background context for callers without cancellation support.
 func (s *ContentStore) Bytes(ref ContentRef) ([]byte, error) {
 	return s.BytesContext(context.Background(), ref)
 }
 
+// BytesContext reconstructs content only after its references and digests are verified.
 func (s *ContentStore) BytesContext(ctx context.Context, ref ContentRef) ([]byte, error) {
 	r, err := s.ReaderContext(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	return io.ReadAll(r)
 }
 
+// Decode uses a background context for callers without cancellation support.
 func (s *ContentStore) Decode(ref ContentRef, value any) error {
 	return s.DecodeContext(context.Background(), ref, value)
 }
 
+// DecodeContext decodes a document from verified stored content with caller cancellation.
 func (s *ContentStore) DecodeContext(ctx context.Context, ref ContentRef, value any) error {
 	r, err := s.ReaderContext(ctx, ref)
 	if err != nil {
@@ -326,6 +351,7 @@ func validHash(value string) bool {
 	return err == nil && len(decoded) == 32 && value == hex.EncodeToString(decoded)
 }
 
+// ContentLimitError separates resource limit failures from invalid content or storage errors.
 type ContentLimitError struct {
 	Resource string
 	Actual   int64
@@ -336,10 +362,12 @@ func (e *ContentLimitError) Error() string {
 	return fmt.Sprintf("bundle resource limit exceeded: resource=%s actual=%d allowed=%d", e.Resource, e.Actual, e.Allowed)
 }
 
+// AtomicBytes uses a background context for callers without cancellation support.
 func AtomicBytes(path string, raw []byte) error {
 	return AtomicBytesContext(context.Background(), path, raw)
 }
 
+// AtomicBytesContext replaces a private file only after the complete content has been written and synced.
 func AtomicBytesContext(ctx context.Context, path string, raw []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -357,7 +385,7 @@ func AtomicBytesContext(ctx context.Context, path string, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	writer := &contentContextWriter{ctx: ctx, writer: f}
 	if _, err = writer.Write(raw); err == nil {
 		err = f.Sync()
@@ -378,7 +406,7 @@ func AtomicBytesContext(ctx context.Context, path string, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	return dir.Sync()
 }
 
@@ -436,6 +464,7 @@ func writeContentDigests(ctx context.Context, raw []byte, digests ...hash.Hash) 
 	return ctx.Err()
 }
 
+// ReadPrivateContext reads bounded private files while honoring caller cancellation.
 func ReadPrivateContext(ctx context.Context, path string, maximum int64) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

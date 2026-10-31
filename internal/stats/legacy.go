@@ -1,3 +1,4 @@
+// Package stats stores local request and review records separately so reports preserve their different grains.
 package stats
 
 import (
@@ -53,7 +54,7 @@ func readLegacy(path string) (*legacyData, error) {
 	if err != nil {
 		return nil, errors.New("cannot open legacy usage journal")
 	}
-	fail := func(err error) (*legacyData, error) { f.Close(); return nil, err }
+	fail := func(err error) (*legacyData, error) { _ = f.Close(); return nil, err }
 	actual, err := f.Stat()
 	if err != nil || !os.SameFile(info, actual) || !privateInfo(actual, false) {
 		return fail(errors.New("legacy usage journal changed while opening"))
@@ -169,7 +170,7 @@ func (s Store) importLegacy(opened *session, now time.Time) error {
 		if err != nil {
 			return errors.New("cannot start usage migration")
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 		for _, event := range legacy.events {
 			if err := earliest(opened.ctx, tx, "tracking_since", event.StartedAt); err != nil {
 				return errors.New("cannot migrate usage metadata")

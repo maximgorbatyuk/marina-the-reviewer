@@ -41,7 +41,7 @@ func recoveryOutput(ids []string, padding string) string {
 }
 
 func recoveryResponse(w http.ResponseWriter, content string) {
-	json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}, "finish_reason": "stop"}}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}, "finish_reason": "stop"}}})
 }
 
 func recoveryRequest(t *testing.T, r *http.Request) ([]string, string) {
@@ -132,10 +132,14 @@ func TestCorrectionBudgetOverflowReplansWithCompleteCoverage(t *testing.T) {
 	}
 	corrections := 0
 	var expectedSchema any
-	json.Unmarshal(review.ResponseSchema(), &expectedSchema)
+	if err := json.Unmarshal(review.ResponseSchema(), &expectedSchema); err != nil {
+		t.Error(err)
+	}
 	for _, attempt := range archive.Attempts {
 		var schema any
-		json.Unmarshal(attempt.Schema, &schema)
+		if err := json.Unmarshal(attempt.Schema, &schema); err != nil {
+			t.Error(err)
+		}
 		if attempt.Provider != "primary" || attempt.Model != "primary-model" || !reflect.DeepEqual(schema, expectedSchema) {
 			t.Fatal("recovery changed the provider or response schema")
 		}
@@ -160,7 +164,7 @@ func TestCorrectionBudgetOverflowReplansWithCompleteCoverage(t *testing.T) {
 func TestCorrectionBudgetReplanRetainsDepthLimit(t *testing.T) {
 	var calls atomic.Int32
 	oversized := recoveryOutput([]string{}, strings.Repeat("detail ", 30000))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		recoveryResponse(w, oversized)
 	}))
@@ -197,7 +201,7 @@ func TestCorrectionBudgetReplanRetainsDepthLimit(t *testing.T) {
 func TestCorrectionBudgetReplanRetainsRequestAttemptLimit(t *testing.T) {
 	var calls atomic.Int32
 	oversized := recoveryOutput([]string{}, strings.Repeat("detail ", 30000))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if calls.Add(1) == 1 {
 			recoveryResponse(w, oversized)
 			return
@@ -231,10 +235,10 @@ func TestCorrectionBudgetReplanRetainsRequestAttemptLimit(t *testing.T) {
 
 func TestContextReplanDoesNotResetSentCorrectionAllowance(t *testing.T) {
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if calls.Add(1) == 2 {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":{"message":"context_length_exceeded"}}`))
+			_, _ = w.Write([]byte(`{"error":{"message":"context_length_exceeded"}}`))
 			return
 		}
 		recoveryResponse(w, recoveryOutput([]string{}, ""))

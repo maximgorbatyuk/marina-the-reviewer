@@ -10,15 +10,15 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
+// ProbeResult reports the outcome of a small setup request before review execution.
 type ProbeResult struct {
 	Elapsed time.Duration
 	Usage   Usage
 }
 
+// Probe checks inference access with a small request that contains no source code.
 func Probe(ctx context.Context, provider config.ProviderSnapshot, token string) (ProbeResult, error) {
 	started := time.Now()
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
 	ctx = usage.WithOperation(ctx, "connection-test")
 	budget := 1024
 	if n := provider.Profile.ContextLength; n > 0 {

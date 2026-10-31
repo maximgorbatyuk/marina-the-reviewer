@@ -273,7 +273,7 @@ Models and credentials
 Connection test
   t tests the selected saved/draft profile; the editor has a button.
   The test sends one small AI request and can use billed tokens.
-  It checks the selected model and JSON mode for up to 60 seconds.
+  It checks the selected model and JSON mode with the configured request timeout.
   It does not send source code, retry or switch to fallback.
   Verified is the last test result, not a persistent connection.
   Parameter changes reset the status. Esc cancels a running request.

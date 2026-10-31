@@ -1,3 +1,4 @@
+// Package config validates provider settings before routing can resolve credentials or send requests.
 package config
 
 import (
@@ -12,21 +13,29 @@ import (
 	"strings"
 )
 
+// DefaultContextLength provides a conservative context limit when a profile does not specify one.
 const DefaultContextLength = 1048576
 
+// DefaultRequestTimeoutSeconds bounds inference requests when a profile does not specify a timeout.
+const DefaultRequestTimeoutSeconds = 3300
+
+// Config keeps profiles and routing together so validation can reject inconsistent settings.
 type Config struct {
 	Version  int                `json:"version"`
 	Routing  Routing            `json:"routing"`
 	Profiles map[string]Profile `json:"profiles"`
 }
 
+// Routing selects named profiles and the errors that permit fallback.
 type Routing struct {
 	Primary    string   `json:"primary"`
 	Fallback   string   `json:"fallback,omitempty"`
 	FallbackOn []string `json:"fallbackOn,omitempty"`
 }
 
+// Profile keeps endpoint, model, and resource limits with their authorization source.
 type Profile struct {
+	Provider                  ProviderKind               `json:"provider,omitempty"`
 	Backend                   string                     `json:"backend"`
 	BaseURL                   string                     `json:"baseUrl"`
 	Model                     string                     `json:"model"`
@@ -44,17 +53,20 @@ type Profile struct {
 	ExtraParameters           map[string]json.RawMessage `json:"extraParameters,omitempty"`
 }
 
+// SecretSource selects one authorization source without requiring secrets in command arguments.
 type SecretSource struct {
 	Kind string `json:"kind"`
 	Name string `json:"name,omitempty"`
 }
 
+// ProviderSnapshot records resolved provider settings without persisting the resolved token.
 type ProviderSnapshot struct {
 	Name    string       `json:"name"`
 	Profile Profile      `json:"profile"`
 	Auth    SecretSource `json:"auth"`
 }
 
+// Route keeps the resolved primary and fallback providers consistent during execution.
 type Route struct {
 	Primary        ProviderSnapshot  `json:"primary"`
 	Fallback       *ProviderSnapshot `json:"fallback,omitempty"`
@@ -62,12 +74,16 @@ type Route struct {
 	RuntimeSecrets map[string]string `json:"-"`
 }
 
+// Overrides allows command options to replace selected routing settings without editing the config file.
 type Overrides struct {
+	Provider                                                         ProviderKind
 	Primary, Fallback, BaseURL, Model, APIKey, APIKeyEnv, APIKeyFile string
 	NoFallback                                                       bool
 	ContextLength, MaximumOutputTokens                               int
+	RequestTimeoutSeconds                                            int
 }
 
+// DefaultPath locates the configuration file in the platform user configuration directory.
 func DefaultPath() (string, error) {
 	if path := os.Getenv("MARINADOREVIEW_CONFIG"); path != "" {
 		return filepath.Abs(path)
@@ -79,6 +95,7 @@ func DefaultPath() (string, error) {
 	return filepath.Join(base, "marina-the-reviewer", "config.json"), nil
 }
 
+// Load validates configuration before it can supply routing and authorization settings.
 func Load(path string) (Config, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -91,7 +108,7 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("cannot open provider configuration: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	decoder := json.NewDecoder(io.LimitReader(f, 1<<20))
 	decoder.DisallowUnknownFields()
 	var cfg Config
@@ -112,6 +129,7 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+// Init creates an example configuration without overwriting an existing file.
 func Init(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
@@ -120,7 +138,7 @@ func Init(path string) error {
 	if err != nil {
 		return fmt.Errorf("cannot create configuration; existing files are preserved: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	cfg := Config{Version: 1, Routing: Routing{Primary: "primary", Fallback: "backup", FallbackOn: DefaultFallbackErrors()}, Profiles: map[string]Profile{
 		"primary": {Backend: "openai-compatible", BaseURL: "https://provider.example/v1", Model: "review-model", APIKeyEnv: "REVIEW_API_KEY", ContextLength: DefaultContextLength},
 		"backup":  {Backend: "openai-compatible", BaseURL: "https://backup-provider.example/v1", Model: "backup-review-model", APIKeyEnv: "BACKUP_REVIEW_API_KEY", ContextLength: DefaultContextLength},
@@ -139,10 +157,12 @@ func Init(path string) error {
 	return f.Sync()
 }
 
+// DefaultFallbackErrors defines which failure classes permit the default fallback route.
 func DefaultFallbackErrors() []string {
 	return []string{"network_error", "timeout", "rate_limit", "server_error"}
 }
 
+// Validate rejects inconsistent profiles and routing before any provider request.
 func (cfg Config) Validate() error {
 	if cfg.Version != 1 {
 		return errors.New("unsupported provider configuration version")
@@ -177,6 +197,7 @@ func (cfg Config) Validate() error {
 	return nil
 }
 
+// ResolveRouting applies command overrides before resolving the primary and fallback profiles.
 func ResolveRouting(cfg Config, override Overrides) (Route, error) {
 	if override.NoFallback && override.Fallback != "" {
 		return Route{}, errors.New("--no-fallback conflicts with --fallback-profile")
@@ -223,11 +244,23 @@ func ResolveRouting(cfg Config, override Overrides) (Route, error) {
 	if override.Model != "" {
 		route.Primary.Profile.Model = override.Model
 	}
+	if override.Provider != ProviderUnspecified {
+		route.Primary.Profile.Provider = override.Provider
+	}
 	if override.ContextLength != 0 {
 		route.Primary.Profile.ContextLength = override.ContextLength
 	}
 	if override.MaximumOutputTokens != 0 {
 		route.Primary.Profile.MaximumOutputTokens = override.MaximumOutputTokens
+	}
+	if override.RequestTimeoutSeconds != 0 {
+		if override.RequestTimeoutSeconds < 1 || override.RequestTimeoutSeconds > 86400 {
+			return Route{}, errors.New("invalid request timeout")
+		}
+		route.Primary.Profile.TimeoutSeconds = override.RequestTimeoutSeconds
+		if route.Fallback != nil {
+			route.Fallback.Profile.TimeoutSeconds = override.RequestTimeoutSeconds
+		}
 	}
 	if override.APIKey != "" {
 		route.Primary.Auth = SecretSource{Kind: "ephemeral"}
@@ -257,6 +290,10 @@ func freezeModelOutputBudget(profile *Profile) {
 	}
 	ceiling := 0
 	switch {
+	case profile.Provider == ProviderXiaomiMiMo:
+		ceiling = 131072
+	case profile.Provider == ProviderDeepSeek:
+		ceiling = 65536
 	case strings.HasPrefix(model, "mimo-"):
 		ceiling = 131072
 	case strings.HasPrefix(model, "deepseek-"):
@@ -267,6 +304,7 @@ func freezeModelOutputBudget(profile *Profile) {
 	profile.MaximumOutputTokens = min((profile.ContextLength+4)/5, ceiling)
 }
 
+// ResolveProfile produces a validated provider snapshot for a selected profile.
 func ResolveProfile(cfg Config, name string) (ProviderSnapshot, error) {
 	if _, ok := cfg.Profiles[name]; !ok {
 		return ProviderSnapshot{}, errors.New("provider profile does not exist")
@@ -283,6 +321,7 @@ func ResolveProfile(cfg Config, name string) (ProviderSnapshot, error) {
 	return ProviderSnapshot{Name: name, Profile: profile, Auth: auth}, nil
 }
 
+// ResolveToken reads the selected secret only when a provider operation needs authorization.
 func ResolveToken(provider ProviderSnapshot, cfg Config, ephemeral map[string]string) (string, error) {
 	if token, ok := ephemeral[provider.Name]; ok && token != "" {
 		return token, nil
@@ -346,11 +385,17 @@ func readSecretFile(path string) (string, error) {
 }
 
 func normalize(profile *Profile) error {
+	if _, err := ParseProviderKind(string(profile.Provider)); err != nil {
+		return err
+	}
 	if profile.Backend == "" {
 		profile.Backend = "openai-compatible"
 	}
 	if profile.Backend != "openai-compatible" {
 		return errors.New("unsupported backend")
+	}
+	if profile.BaseURL == "" && profile.Provider == ProviderXiaomiMiMo {
+		profile.BaseURL = XiaomiMiMoBaseURL
 	}
 	u, err := url.Parse(profile.BaseURL)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
@@ -358,7 +403,7 @@ func normalize(profile *Profile) error {
 	}
 	ip := net.ParseIP(u.Hostname())
 	loopback := strings.EqualFold(u.Hostname(), "localhost") || (ip != nil && ip.IsLoopback())
-	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
+	if u.Scheme != "https" && (u.Scheme != "http" || !loopback) {
 		return errors.New("remote API URLs require HTTPS")
 	}
 	u.Host = strings.ToLower(u.Host)
@@ -389,7 +434,7 @@ func normalize(profile *Profile) error {
 		profile.MaximumConcurrentRequests = 1
 	}
 	if profile.TimeoutSeconds == 0 {
-		profile.TimeoutSeconds = 300
+		profile.TimeoutSeconds = DefaultRequestTimeoutSeconds
 	}
 	if profile.MaximumAttempts == 0 {
 		profile.MaximumAttempts = 2
@@ -423,6 +468,7 @@ func contains(values []string, target string) bool {
 	return false
 }
 
+// ValidateRoute checks resolved routing before a plan can execute provider calls.
 func ValidateRoute(route Route) error {
 	check := func(provider ProviderSnapshot) error {
 		if provider.Name == "" || provider.Profile.APIKey != "" || provider.Profile.APIKeyEnv != "" || provider.Profile.APIKeyFile != "" {

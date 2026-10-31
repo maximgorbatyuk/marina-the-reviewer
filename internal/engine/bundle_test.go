@@ -20,7 +20,7 @@ import (
 
 func TestBundleKeepsSharedGraphOutOfPlanStateAndArchiveWorks(t *testing.T) {
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); okModel(w) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); okModel(w) }))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
 	doc := document()
@@ -76,7 +76,7 @@ func TestBundleKeepsSharedGraphOutOfPlanStateAndArchiveWorks(t *testing.T) {
 
 func TestBundleUnknownRequestCanOnlyRecoverOffline(t *testing.T) {
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); okModel(w) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); okModel(w) }))
 	defer server.Close()
 	_, route := routeFor(t, server.URL, "")
 	plan, err := BuildDocument(document(), route, "", nil)

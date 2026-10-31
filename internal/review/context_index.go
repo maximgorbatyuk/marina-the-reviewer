@@ -22,10 +22,6 @@ type contextSourceKey struct {
 type contextInterval struct{ start, end int }
 type contextSpanIndex map[contextSourceKey][]contextInterval
 
-func newContextSpanIndex(sources []CodeSlice) contextSpanIndex {
-	value, _ := newContextSpanIndexContext(context.Background(), sources)
-	return value
-}
 func newContextSpanIndexContext(ctx context.Context, sources []CodeSlice) (contextSpanIndex, error) {
 	index := contextSpanIndex{}
 	for _, source := range sources {
@@ -39,10 +35,6 @@ func newContextSpanIndexContext(ctx context.Context, sources []CodeSlice) (conte
 		return nil, err
 	}
 	return index, ctx.Err()
-}
-
-func (index contextSpanIndex) seal() {
-	_ = index.sealContext(context.Background())
 }
 
 func (index contextSpanIndex) sealContext(ctx context.Context) error {

@@ -340,7 +340,7 @@ func writeParityJSON(t *testing.T, path string, value any) {
 	encoder := json.NewEncoder(file)
 	encoder.SetEscapeHTML(false)
 	if err = encoder.Encode(value); err != nil {
-		file.Close()
+		_ = file.Close()
 		t.Fatal(err)
 	}
 	if err = file.Close(); err != nil {

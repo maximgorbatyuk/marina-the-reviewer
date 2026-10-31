@@ -20,7 +20,7 @@ func provider(url string, stream bool) config.ProviderSnapshot {
 	return config.ProviderSnapshot{Name: "test", Profile: config.Profile{BaseURL: url + "/v1", Model: "model", ContextLength: 16000, TimeoutSeconds: 5, ResponseFormat: "json_object", OutputTokenParameter: "max_completion_tokens", Stream: stream}}
 }
 
-func TestHTTPErrorResponsePayloadTruncation(t *testing.T) {
+func TestHTTPErrorResponsePayloadIsCompleteUnlessTransportFails(t *testing.T) {
 	for status, code := range map[int]string{401: "authentication", 429: "rate_limit", 503: "server_error"} {
 		for _, tc := range []struct {
 			name, body string
@@ -29,15 +29,15 @@ func TestHTTPErrorResponsePayloadTruncation(t *testing.T) {
 		}{
 			{name: "complete", body: "complete body"},
 			{name: "unexpected-eof", body: "partial body", incomplete: true, truncated: true},
-			{name: "size-limit", body: strings.Repeat("x", 65537), truncated: true},
+			{name: "large-body", body: strings.Repeat("x", 65537)},
 		} {
 			t.Run(strconv.Itoa(status)+"/"+tc.name, func(t *testing.T) {
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					if tc.incomplete {
 						w.Header().Set("Content-Length", strconv.Itoa(len(tc.body)+1))
 					}
 					w.WriteHeader(status)
-					w.Write([]byte(tc.body))
+					_, _ = w.Write([]byte(tc.body))
 				}))
 				defer server.Close()
 				result, err := Complete(context.Background(), provider(server.URL, false), "", request())
@@ -45,7 +45,7 @@ func TestHTTPErrorResponsePayloadTruncation(t *testing.T) {
 				if !errors.As(err, &failure) || failure.Code != code || failure.Status != status {
 					t.Fatalf("wrong HTTP error: %v", err)
 				}
-				if result.ResponsePayloadTruncated != tc.truncated || result.ResponsePayload != tc.body[:min(len(tc.body), 65536)] || result.RawResponse != result.ResponsePayload {
+				if result.ResponsePayloadTruncated != tc.truncated || result.ResponsePayload != tc.body || result.RawResponse != result.ResponsePayload {
 					t.Fatal("HTTP error payload has the wrong content or truncation flag")
 				}
 			})
@@ -68,7 +68,7 @@ func TestJSONModePayloadAndUsage(t *testing.T) {
 			t.Error("wrong output limit")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"{\"findings\":[]}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":4,"total_tokens":16}}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"findings\":[]}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":4,"total_tokens":16}}`))
 	}))
 	defer s.Close()
 	result, err := Complete(context.Background(), provider(s.URL, false), "token", request())
@@ -82,11 +82,11 @@ func TestJSONModePayloadAndUsage(t *testing.T) {
 func TestSSEReassemblesOutputAndRejectsMissingFinish(t *testing.T) {
 	for _, finished := range []bool{true, false} {
 		t.Run(map[bool]string{true: "complete", false: "incomplete"}[finished], func(t *testing.T) {
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
-				w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"findings\\\":[] }\"}}]}\n\n"))
+				_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"findings\\\":[] }\"}}]}\n\n"))
 				if finished {
-					w.Write([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+					_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
 				}
 			}))
 			defer s.Close()
@@ -99,14 +99,14 @@ func TestSSEReassemblesOutputAndRejectsMissingFinish(t *testing.T) {
 }
 func TestStatusErrorsAreSafeAndClassified(t *testing.T) {
 	for status, want := range map[int]string{401: "authentication", 429: "rate_limit", 503: "server_error"} {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(status)
-			w.Write([]byte("do not leak token"))
+			_, _ = w.Write([]byte("do not leak token"))
 		}))
 		_, err := Complete(context.Background(), provider(s.URL, false), "token", request())
 		s.Close()
-		e, ok := err.(*Error)
-		if !ok || e.Code != want {
+		var e *Error
+		if !errors.As(err, &e) || e.Code != want {
 			t.Fatalf("status %d: %v", status, err)
 		}
 		if e.Message == "do not leak token" {
@@ -115,13 +115,13 @@ func TestStatusErrorsAreSafeAndClassified(t *testing.T) {
 	}
 }
 func TestSchemaInvalidOutputIsNotTransportSuccess(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"choices":[{"message":{"content":"{\"unknown\":true}"},"finish_reason":"stop"}]}`))
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"unknown\":true}"},"finish_reason":"stop"}]}`))
 	}))
 	defer s.Close()
 	_, err := Complete(context.Background(), provider(s.URL, false), "", request())
-	e, ok := err.(*Error)
-	if !ok || e.Code != "invalid_output" {
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "invalid_output" {
 		t.Fatalf("error: %v", err)
 	}
 }
@@ -133,11 +133,11 @@ func TestMalformedEnvelopeAndInterruptedStreamKeepDiagnosticText(t *testing.T) {
 			if streaming {
 				body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial-text\"}}]}\n\n"
 			}
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if streaming {
 					w.Header().Set("Content-Type", "text/event-stream")
 				}
-				w.Write([]byte(body))
+				_, _ = w.Write([]byte(body))
 			}))
 			defer server.Close()
 			result, err := Complete(context.Background(), provider(server.URL, streaming), "", request())
@@ -152,8 +152,13 @@ func TestRequestDeadlineDuringResponseBodyIsTimeout(t *testing.T) {
 	streamed := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"private-reasoning\",\"content\":\"partial-output\"}}]}\n\n"))
-		w.(http.Flusher).Flush()
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"private-reasoning\",\"content\":\"partial-output\"}}]}\n\n"))
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("test response writer does not support flushing")
+			return
+		}
+		flusher.Flush()
 		close(streamed)
 		<-r.Context().Done()
 	}))
@@ -187,8 +192,8 @@ func TestRequestDeadlineDuringResponseBodyIsTimeout(t *testing.T) {
 }
 
 func TestRequestDeadlineBeforeHeadersReportsResponseWasNotStarted(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		io.Copy(io.Discard, request.Body)
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		_, _ = io.Copy(io.Discard, request.Body)
 		<-request.Context().Done()
 	}))
 	defer server.Close()

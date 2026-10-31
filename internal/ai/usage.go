@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/redact"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
@@ -36,7 +37,7 @@ func usageMetadata(provider config.ProviderSnapshot, token string) usage.Metadat
 	}
 	clean := func(value string) string {
 		if token != "" {
-			value = strings.ReplaceAll(value, token, "[redacted]")
+			value = redact.Text(value, map[string]string{"provider": token})
 		}
 		value = strings.Map(func(r rune) rune {
 			if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
@@ -49,7 +50,7 @@ func usageMetadata(provider config.ProviderSnapshot, token string) usage.Metadat
 		}
 		return value
 	}
-	return usage.Metadata{ProviderID: clean(root), Provider: clean(name), Profile: clean(provider.Name), Model: clean(provider.Profile.Model)}
+	return usage.Metadata{ProviderID: clean(root), Provider: clean(name), ProviderKind: string(provider.Profile.Provider), Profile: clean(provider.Name), Model: clean(provider.Profile.Model)}
 }
 
 func requestStreamUsage(profile config.Profile) bool {

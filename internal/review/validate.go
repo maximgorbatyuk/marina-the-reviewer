@@ -54,6 +54,8 @@ func stringsField(m map[string]json.RawMessage, k string) ([]string, error) {
 	}
 	return out, nil
 }
+
+// ImportRawOutput extracts model output from a compatible archive or accepts an unwrapped output document.
 func ImportRawOutput(raw json.RawMessage) (json.RawMessage, error) {
 	var obj map[string]json.RawMessage
 	if e := json.Unmarshal(raw, &obj); e != nil {
@@ -72,6 +74,8 @@ func ImportRawOutput(raw json.RawMessage) (json.RawMessage, error) {
 	}
 	return raw, nil
 }
+
+// Validate accepts findings only when their claims and evidence match the supplied prepared input.
 func Validate(prepared PreparedBatch, raw json.RawMessage, id Identity) (BatchResult, error) {
 	r := emptyResult()
 	if e := validateBlocksAndGraph(prepared.Input.Batch.Blocks, prepared.Input.Graph); e != nil {
@@ -301,7 +305,7 @@ func validateItem(r *BatchResult, p PreparedBatch, g GraphProjection, blocks map
 		return a.Line - b.Line
 	})
 	chosen := changes[0]
-	path := b.FilePath
+	var path string
 	var oldLine, newLine *int
 	if chosen.Revision == Head {
 		if b.Head == nil {
@@ -406,9 +410,10 @@ func validateEvidence(ref Evidence, blocks map[string]Block) (Evidence, string, 
 		return ref, "", fmt.Errorf("Unknown evidence block.")
 	}
 	var s *CodeSlice
-	if ref.Revision == "base" {
+	switch ref.Revision {
+	case "base":
 		s = b.Base
-	} else if ref.Revision == "head" {
+	case "head":
 		s = b.Head
 	}
 	if s == nil || ref.StartLine < s.StartLine || ref.EndLine > s.EndLine || ref.EndLine < ref.StartLine || ref.StartLine < 1 || strings.TrimSpace(ref.Quote) == "" || len(utf16.Encode([]rune(ref.Quote))) > 1200 {

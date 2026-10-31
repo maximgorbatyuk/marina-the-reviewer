@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"encoding/json"
+	"reflect"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -315,6 +318,8 @@ func (m *model) choose(choice string) {
 		for _, p := range ai.Presets() {
 			if p.Name == choice {
 				e.preset = choice
+				previousProvider := e.original.Provider
+				e.original.Provider = p.Provider
 				e.fields[fieldURL].SetValue(p.Profile.BaseURL)
 				e.fields[fieldModel].SetValue("")
 				e.fields[fieldCredential].SetValue("")
@@ -324,6 +329,31 @@ func (m *model) choose(choice string) {
 					e.auth = "none"
 				}
 				e.responseFormat = p.Profile.ResponseFormat
+				e.outputParameter = p.Profile.OutputTokenParameter
+				e.stream = p.Profile.Stream
+				e.fields[fieldTimeout].SetValue(strconv.Itoa(p.Profile.TimeoutSeconds))
+				extra := make(map[string]json.RawMessage, len(e.original.ExtraParameters)+len(p.Profile.ExtraParameters))
+				for key, value := range e.original.ExtraParameters {
+					extra[key] = append(json.RawMessage(nil), value...)
+				}
+				for _, previous := range ai.Presets() {
+					if previous.Provider != previousProvider {
+						continue
+					}
+					for key, value := range previous.Profile.ExtraParameters {
+						var current, preset any
+						if json.Unmarshal(extra[key], &current) == nil && json.Unmarshal(value, &preset) == nil && reflect.DeepEqual(current, preset) {
+							delete(extra, key)
+						}
+					}
+				}
+				for key, value := range p.Profile.ExtraParameters {
+					extra[key] = append(json.RawMessage(nil), value...)
+				}
+				e.original.ExtraParameters = nil
+				if len(extra) > 0 {
+					e.original.ExtraParameters = extra
+				}
 				e.updateCredentialView()
 			}
 		}

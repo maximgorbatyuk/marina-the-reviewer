@@ -24,8 +24,12 @@ func TestModelArchiveRoundTripIsNotAValidatedReview(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
 	var a, b any
-	json.Unmarshal([]byte(raw), &a)
-	json.Unmarshal(exported.Bytes(), &b)
+	if err := json.Unmarshal([]byte(raw), &a); err != nil {
+		t.Error(err)
+	}
+	if err := json.Unmarshal(exported.Bytes(), &b); err != nil {
+		t.Error(err)
+	}
 	aj, _ := json.Marshal(a)
 	bj, _ := json.Marshal(b)
 	if !bytes.Equal(aj, bj) {

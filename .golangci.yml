@@ -1,0 +1,54 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bidichk
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - fatcontext
+    - gocheckcompilerdirectives
+    - nilnesserr
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+  settings:
+    errcheck:
+      check-type-assertions: true
+    govet:
+      enable:
+        - deepequalerrors
+        - nilness
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      enable-default-rules: true
+      directives:
+        - name: specify-disable-reason
+        - name: specify-disable-rule
+  exclusions:
+    paths:
+      - ^artifacts/
+    rules:
+      # Validation messages must match the stored compatibility fixtures.
+      - path: internal/review/validate\.go
+        linters:
+          - revive
+          - staticcheck
+        text: '(error-strings:|ST1005:)'
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - ^artifacts/
+
+run:
+  timeout: 5m

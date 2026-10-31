@@ -13,7 +13,7 @@ import (
 
 func gitTest(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	c := exec.Command("git", args...)
+	c := exec.CommandContext(t.Context(), "git", args...)
 	c.Dir = dir
 	c.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.invalid")
 	b, e := c.CombinedOutput()
@@ -26,14 +26,20 @@ func TestPreparePinsObjectsAndDoesNotChangeWorktree(t *testing.T) {
 	d := t.TempDir()
 	gitTest(t, d, "init", "-q")
 	p := filepath.Join(d, "a file\nname.java")
-	os.WriteFile(p, []byte("class A {\n int f() { return 1; }\n}\n"), 0600)
+	if err := os.WriteFile(p, []byte("class A {\n int f() { return 1; }\n}\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "add", ".")
 	gitTest(t, d, "commit", "-qm", "base")
 	base := gitTest(t, d, "rev-parse", "HEAD")
-	os.WriteFile(p, []byte("class A {\n int f() { return 2; }\n}\n"), 0600)
+	if err := os.WriteFile(p, []byte("class A {\n int f() { return 2; }\n}\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "commit", "-qam", "head")
 	head := gitTest(t, d, "rev-parse", "HEAD")
-	os.WriteFile(p, []byte("dirty\n"), 0600)
+	if err := os.WriteFile(p, []byte("dirty\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	before := gitTest(t, d, "status", "--porcelain=v1", "-z")
 	s, e := Prepare(context.Background(), PrepareOptions{Repository: d, Base: base, Head: head, ExactBase: true})
 	if e != nil {

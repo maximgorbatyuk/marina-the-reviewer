@@ -10,9 +10,12 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 )
 
+// BudgetError reports that source input cannot fit the selected provider limits.
 type BudgetError struct{ Code, Message string }
 
 func (e *BudgetError) Error() string { return e.Code + ": " + e.Message }
+
+// OutputBudget reserves output capacity before source batches are sized.
 func OutputBudget(contextLength, blocks int, provider string) int {
 	ceiling := min(int(math.Ceil(float64(contextLength)*0.2)), 32768)
 	expected := 16384 + blocks*512
@@ -136,9 +139,13 @@ func finalizeContext(ctx context.Context, groups [][]Block, hash string, complet
 	}
 	return out, nil
 }
+
+// Plan uses a background context for callers without cancellation support.
 func Plan(d Document, o PlanOptions) (PreparedPlan, error) {
 	return PlanContext(context.Background(), d, o)
 }
+
+// PlanContext partitions review input while preserving changed source coverage and token limits.
 func PlanContext(ctx context.Context, d Document, o PlanOptions) (PreparedPlan, error) {
 	if e := ValidateDocumentContext(ctx, d); e != nil {
 		return PreparedPlan{}, e
@@ -551,10 +558,7 @@ func normalizePartsContext(ctx context.Context, groups [][]Block) error {
 	}
 	return ctx.Err()
 }
-func sourceKeys(blocks []Block) []string {
-	keys, _ := sourceKeysContext(context.Background(), blocks)
-	return keys
-}
+
 func sourceKeysContext(ctx context.Context, blocks []Block) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -593,10 +597,7 @@ func sourceKeysContext(ctx context.Context, blocks []Block) ([]string, error) {
 	}
 	return out, nil
 }
-func changeKeys(blocks []Block) []string {
-	keys, _ := changeKeysContext(context.Background(), blocks)
-	return keys
-}
+
 func changeKeysContext(ctx context.Context, blocks []Block) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -662,9 +663,13 @@ func verifyCoverageContext(ctx context.Context, original []Block, groups [][]Blo
 	}
 	return ctx.Err()
 }
+
+// SplitBatch uses a background context for callers without cancellation support.
 func SplitBatch(parent PreparedBatch, o PlanOptions) ([]PreparedBatch, error) {
 	return SplitBatchContext(context.Background(), parent, o)
 }
+
+// SplitBatchContext reduces a rejected batch without losing its required changed source lines.
 func SplitBatchContext(ctx context.Context, parent PreparedBatch, o PlanOptions) ([]PreparedBatch, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -704,9 +709,13 @@ func SplitBatchContext(ctx context.Context, parent PreparedBatch, o PlanOptions)
 	}
 	return p.Batches, nil
 }
+
+// RefreshPrepared uses a background context for callers without cancellation support.
 func RefreshPrepared(b PreparedBatch) (PreparedBatch, error) {
 	return RefreshPreparedContext(context.Background(), b)
 }
+
+// RefreshPreparedContext recomputes prepared prompts and budget metadata after batch changes.
 func RefreshPreparedContext(ctx context.Context, b PreparedBatch) (PreparedBatch, error) {
 	if e := validateBlocksAndGraphContext(ctx, b.Input.Batch.Blocks, b.Input.Graph); e != nil {
 		return b, e

@@ -15,20 +15,26 @@ import (
 	"syscall"
 )
 
+// MaximumDocumentBytes bounds ordinary private documents before they are read or written.
 const MaximumDocumentBytes = 64 << 20
+
+// MaximumExecutionDocumentBytes permits larger execution archives while retaining a finite document limit.
 const MaximumExecutionDocumentBytes = 128 << 20
 
+// Store locks private run state so concurrent commands cannot update the same run.
 type Store struct {
 	dir, planHash string
 	lock          *os.File
 	codec         Codec
 }
 
+// Codec allows run state to use bundle references without coupling storage to the execution engine.
 type Codec interface {
 	Encode(any) ([]byte, error)
 	Decode([]byte, any) error
 }
 
+// OpenWithCodec locks run storage and applies a caller-supplied state encoding.
 func OpenWithCodec(dir, planHash string, codec Codec) (*Store, error) {
 	store, err := Open(dir, planHash)
 	if err == nil {
@@ -58,6 +64,7 @@ func owned(info os.FileInfo) bool {
 	return ok && stat.Uid == uint32(os.Geteuid())
 }
 
+// Open locks run storage for one plan identity before state can be changed.
 func Open(dir, planHash string) (*Store, error) {
 	if planHash == "" {
 		return nil, errors.New("run plan hash is required")
@@ -81,11 +88,11 @@ func Open(dir, planHash string) (*Store, error) {
 	}
 	info, err = f.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || !owned(info) {
-		f.Close()
+		_ = f.Close()
 		return nil, errors.New("writer lock must be a private regular file")
 	}
 	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, errors.New("run directory is locked by another writer")
 	}
 	s.lock = f
@@ -112,6 +119,7 @@ func Open(dir, planHash string) (*Store, error) {
 	return s, nil
 }
 
+// Close releases the private run lock when its owner finishes.
 func (s *Store) Close() {
 	if s.lock != nil {
 		_ = syscall.Flock(int(s.lock.Fd()), syscall.LOCK_UN)
@@ -155,6 +163,7 @@ func (s *Store) Write(value any) error {
 	return AtomicJSONLimit(filepath.Join(s.dir, "state.json"), envelope{Version: 1, PlanHash: s.planHash, State: data, StateSha256: stateHash(data)}, MaximumExecutionDocumentBytes)
 }
 
+// Event appends a run event so interrupted work can be diagnosed later.
 func (s *Store) Event(value any) error {
 	path := filepath.Join(s.dir, "events.jsonl")
 	if info, err := os.Lstat(path); err == nil && (!info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0) {
@@ -164,13 +173,14 @@ func (s *Store) Event(value any) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := json.NewEncoder(f).Encode(value); err != nil {
 		return err
 	}
 	return f.Sync()
 }
 
+// ReadPrivate reads bounded regular files only after checking their private ownership and permissions.
 func ReadPrivate(path string, maximum int64) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -183,7 +193,7 @@ func ReadPrivate(path string, maximum int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	opened, err := f.Stat()
 	if err != nil || !os.SameFile(info, opened) {
 		return nil, errors.New("saved run file changed during read")
@@ -195,12 +205,13 @@ func ReadPrivate(path string, maximum int64) ([]byte, error) {
 	return data, err
 }
 
+// ReadBoundedFile limits input size before a document is loaded into memory.
 func ReadBoundedFile(path string, maximum int64) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, maximum+1))
 	if err == nil && int64(len(data)) > maximum {
 		err = errors.New("document exceeds the size limit")
@@ -208,15 +219,22 @@ func ReadBoundedFile(path string, maximum int64) ([]byte, error) {
 	return data, err
 }
 
+// AtomicJSON uses the ordinary document limit for atomic JSON writes.
 func AtomicJSON(path string, value any) error {
 	return AtomicJSONContext(context.Background(), path, value)
 }
+
+// AtomicJSONContext uses the ordinary document limit and caller cancellation for atomic JSON writes.
 func AtomicJSONContext(ctx context.Context, path string, value any) error {
 	return AtomicJSONLimitContext(ctx, path, value, MaximumDocumentBytes)
 }
+
+// AtomicJSONLimit uses a background context with an explicit JSON document size limit.
 func AtomicJSONLimit(path string, value any, maximum int) error {
 	return AtomicJSONLimitContext(context.Background(), path, value, maximum)
 }
+
+// AtomicJSONLimitContext rejects oversized JSON before replacing a private file atomically.
 func AtomicJSONLimitContext(ctx context.Context, path string, value any, maximum int) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -238,7 +256,7 @@ func AtomicJSONLimitContext(ctx context.Context, path string, value any, maximum
 		return err
 	}
 	temporary := f.Name()
-	defer os.Remove(temporary)
+	defer func() { _ = os.Remove(temporary) }()
 	encode := func(pretty bool) error {
 		writer := &boundedArtifactWriter{writer: &contentContextWriter{ctx: ctx, writer: f}, maximum: int64(maximum), artifact: filepath.Base(path)}
 		encoder := json.NewEncoder(writer)
@@ -277,7 +295,7 @@ func AtomicJSONLimitContext(ctx context.Context, path string, value any, maximum
 		return fmt.Errorf("output could not be saved: %w", err)
 	}
 	if directory, err := os.Open(parent); err == nil {
-		defer directory.Close()
+		defer func() { _ = directory.Close() }()
 		if err := directory.Sync(); err != nil {
 			return err
 		}
@@ -285,6 +303,7 @@ func AtomicJSONLimitContext(ctx context.Context, path string, value any, maximum
 	return nil
 }
 
+// ArtifactSizeError distinguishes oversized documents from invalid JSON and storage errors.
 type ArtifactSizeError struct {
 	Artifact string
 	Actual   int64

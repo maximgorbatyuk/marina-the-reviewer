@@ -47,6 +47,8 @@ func restoreGraph(b PreparedBatch, d Document) (PreparedBatch, error) {
 	b.Input.Graph = d.Graph
 	return b, nil
 }
+
+// ImportPreparedBatch validates an external prepared batch before it enters execution state.
 func ImportPreparedBatch(raw, sharedDocument json.RawMessage) (PreparedBatch, error) {
 	var b PreparedBatch
 	payload, wrapped, e := importWrapper(raw, "batch")
@@ -75,6 +77,8 @@ func ImportPreparedBatch(raw, sharedDocument json.RawMessage) (PreparedBatch, er
 	}
 	return b, validatePreparedContract(b)
 }
+
+// ImportPreparedPlan validates an external prepared plan before it enters execution state.
 func ImportPreparedPlan(raw, sharedDocument json.RawMessage) (PreparedPlan, error) {
 	var p PreparedPlan
 	payload, wrapped, e := importWrapper(raw, "plan")
