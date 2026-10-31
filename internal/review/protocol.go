@@ -2,6 +2,7 @@ package review
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -11,7 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf16"
+	"unicode/utf8"
 )
 
 //go:embed assets/*
@@ -38,8 +39,59 @@ func marshal(v any) []byte {
 	return bytes.TrimSuffix(b.Bytes(), []byte{'\n'})
 }
 func canonicalJSON(v any) string { return string(marshal(v)) }
+
+type ordinalUnits struct {
+	value string
+	low   uint16
+}
+
+func (units *ordinalUnits) next() (uint16, bool) {
+	if units.low != 0 {
+		value := units.low
+		units.low = 0
+		return value, true
+	}
+	if units.value == "" {
+		return 0, false
+	}
+	first := units.value[0]
+	if first < utf8.RuneSelf {
+		units.value = units.value[1:]
+		return uint16(first), true
+	}
+	value, width := utf8.DecodeRuneInString(units.value)
+	units.value = units.value[width:]
+	if value <= 0xffff {
+		return uint16(value), true
+	}
+	value -= 0x10000
+	units.low = uint16(value&0x3ff) + 0xdc00
+	return uint16(value>>10) + 0xd800, true
+}
 func ordinalCompare(a, b string) int {
-	return slices.Compare(utf16.Encode([]rune(a)), utf16.Encode([]rune(b)))
+	if a == b {
+		return 0
+	}
+	left, right := ordinalUnits{value: a}, ordinalUnits{value: b}
+	for {
+		a, hasA := left.next()
+		b, hasB := right.next()
+		if !hasA {
+			if !hasB {
+				return 0
+			}
+			return -1
+		}
+		if !hasB {
+			return 1
+		}
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return 1
+		}
+	}
 }
 func unique(values []string) []string {
 	out := []string{}
@@ -53,21 +105,54 @@ func unique(values []string) []string {
 	return out
 }
 func calibrated(value string) int {
+	valueCount, _ := calibratedContext(context.Background(), value)
+	return valueCount
+}
+func calibratedContext(ctx context.Context, value string) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	var steps uint32
 	ascii, other := 0, 0
 	for _, r := range value {
+		steps++
+		if steps&4095 == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
 		if r < 128 {
 			ascii++
 		} else {
 			other++
 		}
 	}
-	return int(math.Ceil((float64(ascii)/4 + float64(other)) * 1.5))
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return int(math.Ceil((float64(ascii)/4 + float64(other)) * 1.5)), nil
 }
 func EstimateTokens(system, user string, schema json.RawMessage) int {
 	return calibrated(system) + calibrated(user) + 256 + calibrated(string(schema)) + 128
 }
 func CountTokens(system, user string, schema json.RawMessage) TokenCount {
-	return TokenCount{TemplatedInputTokens: calibrated(system) + calibrated(user) + 256, SchemaReserveTokens: calibrated(string(schema)) + 128, Method: "estimate:unicode-aware-1.5x+256-chat-overhead", Limitation: "No verified provider tokenizer is available. The estimate uses a 1.5 safety factor and relies on bounded context-overflow replanning.", SchemaTokenizationMethod: "estimate:unicode-aware-1.5x+128-wrapper"}
+	count, _ := CountTokensContext(context.Background(), system, user, schema)
+	return count
+}
+func CountTokensContext(ctx context.Context, system, user string, schema json.RawMessage) (TokenCount, error) {
+	systemTokens, err := calibratedContext(ctx, system)
+	if err != nil {
+		return TokenCount{}, err
+	}
+	userTokens, err := calibratedContext(ctx, user)
+	if err != nil {
+		return TokenCount{}, err
+	}
+	schemaTokens, err := calibratedContext(ctx, string(schema))
+	if err != nil {
+		return TokenCount{}, err
+	}
+	return TokenCount{TemplatedInputTokens: systemTokens + userTokens + 256, SchemaReserveTokens: schemaTokens + 128, Method: "estimate:unicode-aware-1.5x+256-chat-overhead", Limitation: "No verified provider tokenizer is available. The estimate uses a 1.5 safety factor and relies on bounded context-overflow replanning.", SchemaTokenizationMethod: "estimate:unicode-aware-1.5x+128-wrapper"}, nil
 }
 func FindingID(run, pass, fingerprint string) (string, error) {
 	normalize := func(v string) (string, error) {

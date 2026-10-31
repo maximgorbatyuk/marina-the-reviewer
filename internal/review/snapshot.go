@@ -1,6 +1,7 @@
 package review
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"path"
@@ -14,11 +15,30 @@ func snapshotManifest(s Snapshot) string {
 		Files                      []FileSnapshot
 	}{s.BaseSha, s.StartSha, s.HeadSha, s.Files}))
 }
+func snapshotManifestContext(ctx context.Context, s Snapshot) (string, error) {
+	value, err := contextJSON(ctx, struct {
+		BaseSha, StartSha, HeadSha string
+		Files                      []FileSnapshot
+	}{s.BaseSha, s.StartSha, s.HeadSha, s.Files})
+	if err != nil {
+		return "", err
+	}
+	return contextHash(ctx, value)
+}
 func ValidateSnapshot(s Snapshot) error {
+	return ValidateSnapshotContext(context.Background(), s)
+}
+func ValidateSnapshotContext(ctx context.Context, s Snapshot) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if s.Version != 1 {
 		return fmt.Errorf("unsupported native snapshot version")
 	}
 	for _, sha := range []string{s.BaseSha, s.StartSha, s.HeadSha} {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if len(sha) != 40 && len(sha) != 64 {
 			return fmt.Errorf("snapshot revisions must be pinned object IDs")
 		}
@@ -26,13 +46,23 @@ func ValidateSnapshot(s Snapshot) error {
 			return fmt.Errorf("snapshot revision contains an invalid object ID")
 		}
 	}
-	if s.ManifestSha256 == "" || s.ManifestSha256 != snapshotManifest(s) {
+	manifest, err := snapshotManifestContext(ctx, s)
+	if err != nil {
+		return err
+	}
+	if s.ManifestSha256 == "" || s.ManifestSha256 != manifest {
 		return fmt.Errorf("snapshot manifest hash does not match its pinned source")
 	}
 	seen := map[string]bool{}
 	complete := true
 	for _, f := range s.Files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		for _, p := range []string{f.OldPath, f.NewPath} {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if p == "" || strings.ContainsRune(p, 0) || strings.HasPrefix(p, "/") || path.Clean(p) != p || p == ".." || strings.HasPrefix(p, "../") {
 				return fmt.Errorf("snapshot contains an invalid source path")
 			}
@@ -48,6 +78,9 @@ func ValidateSnapshot(s Snapshot) error {
 			complete = false
 		}
 		for i, source := range []*SourceSnapshot{f.Base, f.Head} {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if source == nil {
 				continue
 			}
@@ -55,7 +88,11 @@ func ValidateSnapshot(s Snapshot) error {
 			if i == 1 {
 				expectedPath, expectedSHA, revision = f.NewPath, s.HeadSha, Head
 			}
-			if source.Path != expectedPath || source.CommitSha != expectedSHA || source.Revision != revision || source.Sha256 != Hash(source.Content) {
+			sourceHash, err := contextHash(ctx, source.Content)
+			if err != nil {
+				return err
+			}
+			if source.Path != expectedPath || source.CommitSha != expectedSHA || source.Revision != revision || source.Sha256 != sourceHash {
 				return fmt.Errorf("snapshot source identity or content hash does not match")
 			}
 		}
@@ -64,6 +101,9 @@ func ValidateSnapshot(s Snapshot) error {
 			return fmt.Errorf("snapshot diff metadata does not match its patch")
 		}
 		for _, ch := range f.ChangedLines {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			source := f.Base
 			if ch.Revision == Head {
 				source = f.Head
@@ -83,5 +123,5 @@ func ValidateSnapshot(s Snapshot) error {
 	if s.IsComplete != complete {
 		return fmt.Errorf("snapshot completeness does not match its source availability")
 	}
-	return nil
+	return ctx.Err()
 }

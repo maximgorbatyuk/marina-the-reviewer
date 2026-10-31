@@ -1,6 +1,7 @@
 package review
 
 import (
+	"context"
 	"slices"
 	"strings"
 )
@@ -199,99 +200,68 @@ func shared(before, after any) any {
 	}
 	return []any{before, after}
 }
+func ProjectGraphContext(ctx context.Context, full Graph, batch Batch) (GraphProjection, error) {
+	projector, err := newGraphProjectorContext(ctx, full)
+	if err != nil {
+		return GraphProjection{}, err
+	}
+	selected, err := projector.selectGraphContext(ctx, batch, nil)
+	if err != nil {
+		return GraphProjection{}, err
+	}
+	nodes, err := projector.nodesContext(ctx, selected)
+	if err != nil {
+		return GraphProjection{}, err
+	}
+	graph := GraphProjection{nodes, selected.edges, full.Sha256, "", projector.changed, len(full.Nodes), len(full.Edges), projector.limitations, selected.nodeCount == len(full.Nodes) && selected.edgeCount == len(full.Edges)}
+	graph.Sha256 = Hash(defaultJSON(struct {
+		Sha256      string
+		Nodes       []GraphNode `json:"nodes"`
+		Edges       []GraphEdge `json:"edges"`
+		Limitations []string    `json:"limitations"`
+	}{full.Sha256, nodes, selected.edges, projector.limitations}))
+	if err = ctx.Err(); err != nil {
+		return GraphProjection{}, err
+	}
+	return graph, nil
+}
 func SerializeInput(input BatchInput) string {
-	g := ProjectGraph(input.Graph, input.Batch)
-	paths, owners := []string{}, []string{}
+	wire, _ := serializeProjectedInput(context.Background(), input, ProjectGraph(input.Graph, input.Batch))
+	return wire
+}
+func SerializeInputContext(ctx context.Context, input BatchInput) (string, error) {
+	graph, err := ProjectGraphContext(ctx, input.Graph, input.Batch)
+	if err != nil {
+		return "", err
+	}
+	return serializeProjectedInput(ctx, input, graph)
+}
+func serializeProjectedInput(ctx context.Context, input BatchInput, g GraphProjection) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	poll := cpuContextPoll{context: ctx}
+
 	all := map[string]GraphNode{}
 	aliases := map[string]string{}
 	for _, n := range input.Graph.Nodes {
+		if err := poll.check(); err != nil {
+			return "", err
+		}
 		all[n.ID] = n
 		aliases[n.SourceSymbolID] = n.ID
 	}
-	for _, n := range g.Nodes {
-		paths = append(paths, n.Path)
-		if n.DeclaringType != nil {
-			owners = append(owners, *n.DeclaringType)
-		}
+	catalogue, err := makeWireNodeCatalogueContext(ctx, g.Nodes)
+	if err != nil {
+		return "", err
 	}
-	paths = unique(paths)
-	owners = unique(owners)
-	slices.SortFunc(paths, ordinalCompare)
-	slices.SortFunc(owners, ordinalCompare)
-	prefixes := pathPrefixes(paths)
-	wirePaths := []any{}
-	for _, p := range paths {
-		for i, prefix := range prefixes {
-			if strings.HasPrefix(p, prefix) {
-				wirePaths = append(wirePaths, []any{i, p[len(prefix):]})
-				break
-			}
-		}
-	}
-	byID := map[string]GraphNode{}
-	for _, n := range g.Nodes {
-		byID[n.ID] = n
-	}
-	emitted := map[string]bool{}
-	nodeGroups := []any{}
-	groupIndex := map[string]int{}
-	for _, n := range g.Nodes {
-		if emitted[n.ID] {
-			continue
-		}
-		emitted[n.ID] = true
-		var before, after *GraphNode
-		node := n
-		if n.Revision == Base {
-			before = &node
-		} else {
-			after = &node
-		}
-		if n.CounterpartID != nil && !emitted[*n.CounterpartID] {
-			other, ok := byID[*n.CounterpartID]
-			if ok && other.CounterpartID != nil && *other.CounterpartID == n.ID {
-				emitted[other.ID] = true
-				if other.Revision == Base {
-					before = &other
-				} else {
-					after = &other
-				}
-			}
-		}
-		value := func(n *GraphNode, kind string) any {
-			if n == nil {
-				return nil
-			}
-			switch kind {
-			case "id":
-				return n.ID
-			case "path":
-				return slices.Index(paths, n.Path)
-			case "owner":
-				if n.DeclaringType == nil {
-					return nil
-				}
-				return slices.Index(owners, *n.DeclaringType)
-			case "signature":
-				return n.Signature
-			default:
-				return n.Change
-			}
-		}
-		group := []any{shared(value(before, "path"), value(after, "path")), shared(value(before, "owner"), value(after, "owner")), n.Kind, shared(value(before, "change"), value(after, "change"))}
-		key := canonicalJSON(group)
-		row := []any{[]any{value(before, "id"), value(after, "id")}, shared(value(before, "signature"), value(after, "signature"))}
-		if i, ok := groupIndex[key]; ok {
-			prior := nodeGroups[i].([]any)
-			prior[4] = append(prior[4].([]any), row)
-		} else {
-			groupIndex[key] = len(nodeGroups)
-			nodeGroups = append(nodeGroups, append(group, []any{row}))
-		}
-	}
+	prefixes, wirePaths, owners, nodeGroups := catalogue.Prefixes, catalogue.Paths, catalogue.Owners, catalogue.Groups
 	edgeGroups := []any{}
 	edgeIndex := map[string]int{}
 	for _, e := range g.Edges {
+		if err := poll.check(); err != nil {
+			return "", err
+		}
 		kind := map[string]int{"call": 0, "contains": 1, "counterpart": 2, "possible-move": 3}[e.Kind]
 		change := map[string]int{"unchanged": 0, "added": 1, "removed": 2, "structural": 3, "matched-declaration": 4, "unproven": 5}[e.Change]
 		head := []any{kind, e.TargetIDs, e.Revision, e.InvokedName, e.ReceiverType, e.Resolution, change, e.Confidence, e.Reasons}
@@ -305,68 +275,22 @@ func SerializeInput(input BatchInput) string {
 			edgeGroups = append(edgeGroups, append(head, []any{row}))
 		}
 	}
-	type wireSlice struct {
-		Path       string `json:"path"`
-		StartLine  int    `json:"startLine"`
-		EndLine    int    `json:"endLine"`
-		IsComplete bool   `json:"isComplete"`
-		Content    string `json:"content"`
-	}
-	slice := func(s *CodeSlice) *wireSlice {
-		if s == nil {
-			return nil
-		}
-		return &wireSlice{s.Path, s.StartLine, s.EndLine, s.IsComplete, s.Content}
-	}
-	type structural struct {
-		Revision string     `json:"revision"`
-		Source   *wireSlice `json:"source"`
-	}
-	type wireBlock struct {
-		ID                string       `json:"id"`
-		FilePath          string       `json:"filePath"`
-		Kind              string       `json:"kind"`
-		SymbolIDs         []string     `json:"symbolIds"`
-		BaseExists        bool         `json:"baseExists"`
-		HeadExists        bool         `json:"headExists"`
-		PartIndex         int          `json:"partIndex"`
-		PartCount         int          `json:"partCount"`
-		Before            *wireSlice   `json:"before"`
-		After             *wireSlice   `json:"after"`
-		StructuralContext []structural `json:"structuralContext"`
-		ChangedBaseLines  []int        `json:"changedBaseLines"`
-		ChangedHeadLines  []int        `json:"changedHeadLines"`
-		Limitations       []string     `json:"limitations"`
-	}
 	blocks := []wireBlock{}
 	for _, b := range input.Batch.Blocks {
-		w := wireBlock{b.ID, b.FilePath, b.Kind, []string{}, b.BaseExists, b.HeadExists, b.PartIndex, b.PartCount, slice(b.Base), slice(b.Head), []structural{}, []int{}, []int{}, b.Limitations}
-		for _, id := range b.SymbolIDs {
-			if alias, ok := aliases[id]; ok {
-				id = alias
-			}
-			if n, ok := all[id]; ok && (intersects(n, b.Base) || intersects(n, b.Head)) {
-				w.SymbolIDs = append(w.SymbolIDs, id)
-			}
+		if err := poll.check(); err != nil {
+			return "", err
 		}
-		for _, s := range b.StructuralContext {
-			rev := "Base"
-			if s.Revision == Head {
-				rev = "Head"
-			}
-			w.StructuralContext = append(w.StructuralContext, structural{rev, slice(&s)})
+		block, err := makeWireBlockContext(ctx, b, all, aliases)
+		if err != nil {
+			return "", err
 		}
-		for _, ch := range b.ChangedLines {
-			if ch.Revision == Base {
-				w.ChangedBaseLines = append(w.ChangedBaseLines, ch.Line)
-			} else {
-				w.ChangedHeadLines = append(w.ChangedHeadLines, ch.Line)
-			}
-		}
-		blocks = append(blocks, w)
+		blocks = append(blocks, block)
 	}
 	limitations := []string{}
 	for _, l := range input.Limitations {
+		if err := poll.check(); err != nil {
+			return "", err
+		}
 		if !slices.Contains(g.Limitations, l) {
 			limitations = append(limitations, l)
 		}
@@ -398,7 +322,7 @@ func SerializeInput(input BatchInput) string {
 		Resolution string `json:"resolution"`
 		EdgeChange string `json:"edgeChange"`
 	}{"0=class,1=interface,2=record,3=enum,4=method", "0=unchanged,1=added,2=modified,3=deleted", "0=call,1=contains,2=counterpart,3=possible-move", "0=base,1=head", "0=resolved,1=ambiguous,2=unresolved", "0=unchanged,1=added,2=removed,3=structural,4=matched-declaration,5=unproven"}, []string{"pathIndex", "ownerIndex", "kind", "change", "nodes[ids[base,head],signature]"}, nodeGroups, []string{"kind", "targets", "revision", "invokedName", "receiverType", "resolution", "change", "confidence", "reasons", "instances[id,source,line]"}, edgeGroups, g.Limitations}
-	return canonicalJSON(struct {
+	wire := canonicalJSON(struct {
 		Version     int      `json:"version"`
 		Purpose     string   `json:"purpose"`
 		BaseSha     string   `json:"baseSha"`
@@ -414,4 +338,8 @@ func SerializeInput(input BatchInput) string {
 		FileParts     []FilePart  `json:"fileParts"`
 		Blocks        []wireBlock `json:"blocks"`
 	}{input.Batch.Index, input.Batch.Count, input.Batch.IsWholeReview, input.Batch.FileParts, blocks}, limitations, input.Task})
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return wire, nil
 }

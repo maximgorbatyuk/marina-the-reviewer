@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseSha": {
+      "type": "string"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "baselineCommit": {
+          "type": "string"
+        },
+        "protocolSha256": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "responseSchemaSha256": {
+          "type": "string"
+        },
+        "validationPolicyVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "baselineCommit",
+        "protocolVersion",
+        "validationPolicyVersion",
+        "responseSchemaSha256",
+        "protocolSha256"
+      ],
+      "type": "object"
+    },
+    "deadlineSeconds": {
+      "type": "integer"
+    },
+    "entries": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "byteLength": {
+            "type": "integer"
+          },
+          "parts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "byteLength": {
+                  "type": "integer"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sha256",
+                "byteLength",
+                "file"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "byteLength",
+          "parts"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "exporter": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "commit": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "version",
+            "commit"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "headSha": {
+      "type": "string"
+    },
+    "invocationSha256": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "passId": {
+      "type": "string"
+    },
+    "planFileSha256": {
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "resourcePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "deadlineSeconds": {
+          "type": "integer"
+        },
+        "maximumPartBytes": {
+          "type": "integer"
+        },
+        "maximumParts": {
+          "type": "integer"
+        },
+        "maximumUniqueBytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maximumUniqueBytes",
+        "maximumParts",
+        "maximumPartBytes",
+        "deadlineSeconds"
+      ],
+      "type": "object"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 2
+    },
+    "selectionVersion": {
+      "type": "integer"
+    },
+    "startSha": {
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "producer",
+    "compatibility",
+    "invocationSha256",
+    "runId",
+    "passId",
+    "baseSha",
+    "startSha",
+    "headSha",
+    "selectionVersion",
+    "planHash",
+    "planFileSha256",
+    "status",
+    "startedAt",
+    "deadlineSeconds",
+    "resourcePolicy",
+    "entries"
+  ],
+  "title": "review-artifact-bundle-v2",
+  "type": "object"
+}

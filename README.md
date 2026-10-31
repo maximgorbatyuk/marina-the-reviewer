@@ -118,6 +118,11 @@ Source, prompt, routing and budgets are fixed in a plan. Use `plan --input plan.
 
 ### Execution archives
 
+For a single full command with public shared artifacts and safe resume, use
+[`review --artifacts-dir`](docs/artifact-bundles.md). This opt-in version 2 bundle
+stores the shared graph once and uses verified parts for large source and audit
+data. Legacy commands and version 1 archives remain supported.
+
 An integration can retain the native result and a separate versioned execution archive:
 
 ```sh

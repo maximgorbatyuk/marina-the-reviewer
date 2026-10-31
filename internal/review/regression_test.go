@@ -118,9 +118,9 @@ func TestRefreshPreparedUpdatesInputIdentityAfterScopeChange(t *testing.T) {
 		t.Fatal(e)
 	}
 }
-func TestJavaReceiverConflictsDoNotSelectAnotherMethodsParameter(t *testing.T) {
+func TestLegacyJavaReceiverConflictsDoNotSelectAnotherMethodsParameter(t *testing.T) {
 	source := "class A {\n B service;\n int f() {\n  return service.g();\n }\n void h(C service) {}\n}\nclass B {\n int g() { return 1; }\n}\nclass C {\n int g() { return 2; }\n}\n"
-	d, e := Analyze(Snapshot{IsComplete: true, Files: []FileSnapshot{{OldPath: "A.java", NewPath: "A.java", Operation: "A", Head: &SourceSnapshot{Path: "A.java", Revision: Head, Content: source}, ChangedLines: []ChangedLine{{Head, 4}}}}})
+	d, e := analyzeWithSelection(Snapshot{IsComplete: true, Files: []FileSnapshot{{OldPath: "A.java", NewPath: "A.java", Operation: "A", Head: &SourceSnapshot{Path: "A.java", Revision: Head, Content: source}, ChangedLines: []ChangedLine{{Head, 4}}}}}, 1)
 	if e != nil {
 		t.Fatal(e)
 	}

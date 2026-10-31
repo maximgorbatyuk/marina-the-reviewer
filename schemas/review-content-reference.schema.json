@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "byteLength": {
+      "type": "integer"
+    },
+    "parts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "byteLength": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "byteLength",
+          "file"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "sha256": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sha256",
+    "byteLength",
+    "parts"
+  ],
+  "title": "review-content-reference",
+  "type": "object"
+}

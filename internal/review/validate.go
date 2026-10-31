@@ -467,19 +467,21 @@ func validateEvidence(ref Evidence, blocks map[string]Block) (Evidence, string, 
 	return ref, correction, nil
 }
 func hasBody(n GraphNode, blocks map[string]Block) bool {
-	for _, b := range blocks {
-		ss := append([]CodeSlice{}, b.StructuralContext...)
-		s := b.Base
-		if n.Revision == Head {
-			s = b.Head
-		}
-		if s != nil {
-			ss = append(ss, *s)
-		}
-		for _, s := range ss {
-			if s.Revision == n.Revision && s.Path == n.Path && s.IsComplete && s.StartLine <= n.StartLine && s.EndLine >= n.EndLine {
+	covers := func(source CodeSlice) bool {
+		return source.Revision == n.Revision && source.Path == n.Path && source.IsComplete && source.StartLine <= n.StartLine && source.EndLine >= n.EndLine
+	}
+	for _, block := range blocks {
+		for _, source := range block.StructuralContext {
+			if covers(source) {
 				return true
 			}
+		}
+		source := block.Base
+		if n.Revision == Head {
+			source = block.Head
+		}
+		if source != nil && covers(*source) {
+			return true
 		}
 	}
 	return false
