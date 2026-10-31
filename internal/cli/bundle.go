@@ -264,10 +264,14 @@ func executeBundle(ctx context.Context, command string, a arguments, in io.Reade
 		if _, ok := bundle.Manifest.Entries["document"]; ok {
 			err = phase("analysis-resume", func() error { saved, e := bundle.SharedDocumentContext(ctx); document = saved.Document; return e })
 		} else {
-			if bundle.Manifest.SelectionVersion != review.CurrentSelectionVersion {
+			if bundle.Manifest.SelectionVersion < 1 || bundle.Manifest.SelectionVersion > review.CurrentSelectionVersion {
 				return fail("analysis", errors.New("saved selection policy requires its original analyzer; a new policy must not rebuild this invocation"))
 			}
-			err = phase("analysis", func() error { var e error; document, e = review.AnalyzeContext(ctx, snapshot.Snapshot); return e })
+			err = phase("analysis", func() error {
+				var e error
+				document, e = review.AnalyzeSelectionContext(ctx, snapshot.Snapshot, bundle.Manifest.SelectionVersion)
+				return e
+			})
 		}
 		if err != nil {
 			return fail("analysis", err)

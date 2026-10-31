@@ -12,7 +12,9 @@ Recorded comparisons cover:
 - Java source selection and changed-line disposition in a synthetic case.
 - Whole-batch dependencies, both revisions of unchanged callees and structural context.
 
-This boundary does not imply exhaustive source-parser equivalence. Native Java analysis uses lexical tokens. Symbol IDs, inherited/type-based overload resolution, move heuristics and exact split cuts can differ. Ambiguous dependencies stay unresolved. Unsupported constructs carry limitations, and non-Java source uses a block fallback. Splits retain primary lines separately for each revision where alignment is not proven.
+This boundary does not imply exhaustive source-parser equivalence. Native Java analysis uses lexical tokens. Symbol IDs, inherited/type-based overload resolution, move heuristics and exact split cuts can differ. Ambiguous dependencies stay unresolved. Unsupported constructs carry limitations. Go has a separate AST and local dependency analyzer; other languages use a block fallback. Splits retain primary lines separately for each revision where alignment is not proven.
+
+Source selection version 3 adds Go analysis without changing the response schema or the compatibility fingerprint. Saved version 1 and 2 source policies remain available for unfinished bundles. Resume keeps a saved document and its graph; it does not rebuild that document with the current analyzer. Re-run `prepare` to obtain Go dependency source missing from an older snapshot.
 
 Stored DTO enums are numeric; the AI wire projection uses string values. Imports accept camelCase and PascalCase C# DTO properties. Shared restoration checks base/start/head, manifest and graph identity. A standalone document does not expose its external artifact UUID, so content checks cannot prove database ownership of that UUID.
 

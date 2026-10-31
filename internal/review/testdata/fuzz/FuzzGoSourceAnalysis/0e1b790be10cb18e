@@ -1,0 +1,2 @@
+go test fuzz v1
+string("package atp\nfunc B()A{}; func B()A{A0() } ")
