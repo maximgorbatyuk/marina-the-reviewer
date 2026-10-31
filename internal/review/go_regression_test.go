@@ -119,6 +119,42 @@ func TestGoConditionalGlobalReceiverDoesNotChooseFirstType(t *testing.T) {
 	}
 }
 
+func TestGoSameLineDependenciesHaveStableOrder(t *testing.T) {
+	before := "package app\nfunc Execute() int {\n return first() + second()\n}\n"
+	snapshot := goTestSnapshot("main.go", before, strings.Replace(before, "+ second()", "+ second() + 1", 1), 3, map[string]string{
+		"helper.go": "package app\nfunc first() int { return A }; func second() int { return B }\n",
+		"a.go":      "package app\nconst A = 1\n",
+		"b.go":      "package app\nconst B = 2\n",
+	})
+	want, err := Analyze(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 100 {
+		got, err := Analyze(snapshot)
+		if err != nil || canonicalJSON(got) != canonicalJSON(want) {
+			t.Fatal("same-line dependency declarations have unstable ordering")
+		}
+	}
+}
+
+func TestGoConversionsAreNotDynamicFunctionCalls(t *testing.T) {
+	before := "package app\ntype Service struct{}\nfunc Execute[T any](value T, raw string, pointer *func() int) int {\n _ = []byte(raw)\n _ = (*Service)(nil)\n _ = T(value)\n return (*pointer)()\n}\n"
+	document, err := Analyze(goTestSnapshot("main.go", before, strings.Replace(before, "(*pointer)()", "(*pointer)() + 1", 1), 7, map[string]string{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	for _, edge := range document.Graph.Edges {
+		if edge.Revision == Head && edge.Kind == "call" {
+			calls++
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("Go conversions became function calls: %d", calls)
+	}
+}
+
 func TestGoExternalReplacementDoesNotResolveLocalNamesake(t *testing.T) {
 	before := "package app\nimport svc \"example.test/service\"\nfunc Execute() int {\n return svc.Load()\n}\n"
 	snapshot := goTestSnapshot("app/main.go", before, strings.Replace(before, "svc.Load()", "svc.Load() + 1", 1), 4, map[string]string{

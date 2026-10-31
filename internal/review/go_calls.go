@@ -13,6 +13,7 @@ type goTypeReference struct {
 	name        string
 	pointer     bool
 	addressable bool
+	isType      bool
 }
 
 type goScope struct {
@@ -59,7 +60,7 @@ func (analyzer *goSourceAnalyzer) callGraph(ctx context.Context, graphIDs map[st
 				walker.bindFields(scope, function.Recv)
 				walker.bindFields(scope, function.Type.Params)
 				walker.bindFields(scope, function.Type.Results)
-				walker.bindFields(scope, function.Type.TypeParams)
+				walker.bindTypeParameters(scope, function.Type.TypeParams)
 			}
 			walker.walk(declaration.node, scope)
 			if walker.err != nil {
@@ -73,7 +74,10 @@ func (analyzer *goSourceAnalyzer) callGraph(ctx context.Context, graphIDs map[st
 				if a.file.source.Path != b.file.source.Path {
 					return ordinalCompare(a.file.source.Path, b.file.source.Path)
 				}
-				return a.source.StartLine - b.source.StartLine
+				if a.source.StartLine != b.source.StartLine {
+					return a.source.StartLine - b.source.StartLine
+				}
+				return int(a.node.Pos() - b.node.Pos())
 			})
 		}
 	}
@@ -89,6 +93,17 @@ func (walker *goCallWalk) bindFields(scope goScope, fields *ast.FieldList) {
 		typ.addressable = true
 		for _, name := range field.Names {
 			scope.bindings[name.Name] = typ
+		}
+	}
+}
+
+func (walker *goCallWalk) bindTypeParameters(scope goScope, fields *ast.FieldList) {
+	if fields == nil {
+		return
+	}
+	for _, field := range fields.List {
+		for _, name := range field.Names {
+			scope.bindings[name.Name] = goTypeReference{isType: true}
 		}
 	}
 }
@@ -261,9 +276,14 @@ func (walker *goCallWalk) resolveCall(expression ast.Expr, scope goScope) ([]*go
 		return walker.resolveCall(node.X, scope)
 	case *ast.IndexListExpr:
 		return walker.resolveCall(node.X, scope)
+	case *ast.ArrayType, *ast.MapType, *ast.ChanType, *ast.StructType, *ast.InterfaceType, *ast.FuncType:
+		return nil, "<conversion>", true
+	case *ast.StarExpr:
+		_, name, conversion := walker.resolveCall(node.X, scope)
+		return nil, name, conversion
 	case *ast.Ident:
-		if _, shadowed := scope.lookup(node.Name); shadowed {
-			return nil, node.Name, false
+		if binding, shadowed := scope.lookup(node.Name); shadowed {
+			return nil, node.Name, binding.isType
 		}
 		localTargets := walker.analyzer.packageDeclarations(file, node.Name)
 		if len(localTargets) == 0 && slices.Contains([]string{"append", "cap", "clear", "close", "complex", "copy", "delete", "imag", "len", "make", "max", "min", "new", "panic", "print", "println", "real", "recover", "bool", "byte", "complex64", "complex128", "error", "float32", "float64", "int", "int8", "int16", "int32", "int64", "rune", "string", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr"}, node.Name) {
@@ -493,7 +513,7 @@ func (walker *goCallWalk) walk(root ast.Node, scope goScope) {
 						}
 					} else if typ, ok := specification.(*ast.TypeSpec); ok {
 						walker.walk(typ.Type, scope)
-						scope.bindings[typ.Name.Name] = goTypeReference{}
+						scope.bindings[typ.Name.Name] = goTypeReference{isType: true}
 					}
 				}
 			}

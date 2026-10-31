@@ -51,12 +51,7 @@ func (analyzer *goSourceAnalyzer) decorateDocumentContext(ctx context.Context, d
 			if file == nil || file.ast == nil {
 				continue
 			}
-			pending := []*goDeclaration{}
-			for _, declaration := range file.declarations {
-				if declaration.source.StartLine <= source.EndLine && declaration.source.EndLine >= source.StartLine {
-					pending = append(pending, declaration)
-				}
-			}
+			pending := file.overlappingDeclarations(source.StartLine, source.EndLine)
 			visited := map[*goDeclaration]bool{}
 			for len(pending) > 0 {
 				if err := ctx.Err(); err != nil {

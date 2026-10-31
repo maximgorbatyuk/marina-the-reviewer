@@ -600,6 +600,14 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			}
 			continue
 		}
+		var goChanges *goChangedLineIndex
+		if goAnalyzer != nil && isGoSource(f.NewPath) {
+			var err error
+			goChanges, err = newGoChangedLineIndex(ctx, changes)
+			if err != nil {
+				return Document{}, err
+			}
+		}
 		firstBlock := len(d.Blocks)
 		unitKeys := []string{}
 		grouped := map[string][]sourceUnit{}
@@ -656,12 +664,16 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 				continue
 			}
 			changed := []ChangedLine{}
-			for _, ch := range changes {
-				if err := ctx.Err(); err != nil {
-					return Document{}, err
-				}
-				if within(ch, before, after) {
-					changed = append(changed, ch)
+			if goChanges != nil {
+				changed = goChanges.within(before, after)
+			} else {
+				for _, ch := range changes {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
+					if within(ch, before, after) {
+						changed = append(changed, ch)
+					}
 				}
 			}
 			if len(changed) == 0 {
@@ -740,6 +752,10 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 			if rev == Head {
 				source = f.Head
 			}
+			var sourceLines []string
+			if source != nil {
+				sourceLines = lines(source.Content)
+			}
 			for _, ch := range changes {
 				if err := ctx.Err(); err != nil {
 					return Document{}, err
@@ -747,11 +763,11 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 				if ch.Revision != rev || owned[ch] {
 					continue
 				}
-				if source == nil || ch.Line < 1 || ch.Line > len(lines(source.Content)) {
+				if source == nil || ch.Line < 1 || ch.Line > len(sourceLines) {
 					d.Coverage.Exceptions = append(d.Coverage.Exceptions, fmt.Sprintf("%s:%d:%d: source line unavailable.", f.NewPath, rev, ch.Line))
 					continue
 				}
-				if strings.TrimSpace(lines(source.Content)[ch.Line-1]) == "" {
+				if strings.TrimSpace(sourceLines[ch.Line-1]) == "" {
 					d.Coverage.ExcludedLines = append(d.Coverage.ExcludedLines, ChangeDisposition{f.NewPath, rev, ch.Line, "Blank line outside a declaration."})
 					continue
 				}
@@ -770,7 +786,7 @@ func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selecti
 					end++
 				}
 				group := remaining[:end]
-				v := sourceSlice(*source, group[0], group[len(group)-1], false)
+				v := CodeSlice{Path: source.Path, Revision: source.Revision, StartLine: group[0], EndLine: group[len(group)-1], SymbolStartLine: group[0], SymbolEndLine: group[len(group)-1], Content: strings.Join(sourceLines[group[0]-1:group[len(group)-1]], "\n"), IsComplete: false}
 				changed := []ChangedLine{}
 				for _, line := range group {
 					if err := ctx.Err(); err != nil {

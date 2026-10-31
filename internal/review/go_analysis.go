@@ -33,6 +33,9 @@ type goSourceFile struct {
 	imports      map[string]string
 	dotImports   []string
 	declarations []*goDeclaration
+	ranges       []*goDeclaration
+	rangeEnds    []int
+	rangeVisited int
 	variant      string
 	platform     string
 	architecture string
@@ -76,6 +79,7 @@ func newGoSourceAnalyzerContext(ctx context.Context, files []FileSnapshot) (*goS
 		if err := analyzer.indexFile(ctx, file); err != nil {
 			return nil, err
 		}
+		file.indexDeclarationRanges()
 	}
 	return analyzer, ctx.Err()
 }
@@ -279,7 +283,7 @@ func mergeGoUnits(units []sourceUnit, symbols []sourceSymbol) []sourceUnit {
 				prior.source.EndLine = unit.source.EndLine
 				prior.source.SymbolEndLine = unit.source.EndLine
 			}
-			prior.key = stableKey(*prior) + "+" + stableKey(unit)
+			prior.key = Hash(stableKey(*prior) + "+" + stableKey(unit))
 			prior.kind, prior.symbol = "declaration", -1
 			continue
 		}
