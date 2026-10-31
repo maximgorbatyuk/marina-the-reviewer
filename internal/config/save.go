@@ -25,7 +25,7 @@ func fileRevision(path string) (string, error) {
 	if err != nil {
 		return "", errors.New("cannot read configuration file")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, io.LimitReader(f, (1<<20)+1)); err != nil {
 		return "", errors.New("cannot read configuration file")
@@ -33,6 +33,7 @@ func fileRevision(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// OpenForEdit returns configuration and its revision digest so saving can detect concurrent file changes.
 func OpenForEdit(path string) (Config, string, error) {
 	revision, err := fileRevision(path)
 	if err != nil {
@@ -52,6 +53,7 @@ func OpenForEdit(path string) (Config, string, error) {
 	return cfg, revision, nil
 }
 
+// Save writes validated configuration atomically and rejects a stale editing baseline.
 func Save(path string, cfg Config, expectedRevision string) (string, error) {
 	if err := cfg.Validate(); err != nil {
 		return "", err
@@ -78,8 +80,8 @@ func Save(path string, cfg Config, expectedRevision string) (string, error) {
 	if err != nil {
 		return "", errors.New("cannot create private configuration file")
 	}
-	defer os.Remove(f.Name())
-	defer f.Close()
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(data); err != nil {
 		return "", errors.New("cannot write configuration")
 	}

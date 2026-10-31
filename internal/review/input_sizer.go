@@ -266,12 +266,12 @@ func (s *inputSizer) blockWeightContext(ctx context.Context, b Block) (int, erro
 		plain.ChangedLines = slices.Clone(b.ChangedLines)
 		plain.Limitations = slices.Clone(b.Limitations)
 		if b.Base != nil {
-			copy := *b.Base
-			plain.Base = &copy
+			cloned := *b.Base
+			plain.Base = &cloned
 		}
 		if b.Head != nil {
-			copy := *b.Head
-			plain.Head = &copy
+			cloned := *b.Head
+			plain.Head = &cloned
 		}
 		retained := retainedBlockBytes(plain)
 		if retained <= maximumBlockCacheBytes {

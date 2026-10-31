@@ -178,7 +178,7 @@ func TestStoreConcurrentProcesses(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
 	commands := []*exec.Cmd{}
 	for i := 0; i < 3; i++ {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestUsageWriterProcess$")
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestUsageWriterProcess$")
 		cmd.Env = append(os.Environ(), "MARINADOREVIEW_TEST_USAGE_PATH="+path, "GORACE=atexit_sleep_ms=0")
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)

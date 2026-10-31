@@ -18,12 +18,24 @@ func TestPrepareClassifiesExternalAndBinaryChanges(t *testing.T) {
 	gitTest(t, d, "add", ".")
 	gitTest(t, d, "commit", "-qm", "base")
 	base := gitTest(t, d, "rev-parse", "HEAD")
-	os.Remove(filepath.Join(d, "old.txt"))
-	os.Rename(filepath.Join(d, "rename.txt"), filepath.Join(d, "renamed.txt"))
-	os.WriteFile(filepath.Join(d, "binary.dat"), []byte("new\x00data"), 0600)
-	os.WriteFile(filepath.Join(d, "pointer"), []byte("version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 123\n"), 0600)
-	os.WriteFile(filepath.Join(d, ".gitattributes"), []byte("attr.bin binary\n"), 0600)
-	os.WriteFile(filepath.Join(d, "attr.bin"), []byte("looks like text\n"), 0600)
+	if err := os.Remove(filepath.Join(d, "old.txt")); err != nil {
+		t.Error(err)
+	}
+	if err := os.Rename(filepath.Join(d, "rename.txt"), filepath.Join(d, "renamed.txt")); err != nil {
+		t.Error(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "binary.dat"), []byte("new\x00data"), 0600); err != nil {
+		t.Error(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "pointer"), []byte("version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 123\n"), 0600); err != nil {
+		t.Error(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, ".gitattributes"), []byte("attr.bin binary\n"), 0600); err != nil {
+		t.Error(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "attr.bin"), []byte("looks like text\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "add", ".")
 	gitTest(t, d, "update-index", "--add", "--cacheinfo", "160000,"+base+",external")
 	gitTest(t, d, "commit", "-qm", "head")
@@ -49,16 +61,22 @@ func TestPrepareClassifiesExternalAndBinaryChanges(t *testing.T) {
 func TestPrepareUsesMergeBaseAndIgnoresAmbientRepository(t *testing.T) {
 	d := t.TempDir()
 	gitTest(t, d, "init", "-q")
-	os.WriteFile(filepath.Join(d, "a"), []byte("base\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, "a"), []byte("base\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "add", ".")
 	gitTest(t, d, "commit", "-qm", "base")
 	common := gitTest(t, d, "rev-parse", "HEAD")
 	gitTest(t, d, "checkout", "-qb", "branch-a")
-	os.WriteFile(filepath.Join(d, "a"), []byte("a\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, "a"), []byte("a\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "commit", "-qam", "a")
 	a := gitTest(t, d, "rev-parse", "HEAD")
 	gitTest(t, d, "checkout", "-qb", "branch-b", common)
-	os.WriteFile(filepath.Join(d, "a"), []byte("b\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, "a"), []byte("b\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "commit", "-qam", "b")
 	b := gitTest(t, d, "rev-parse", "HEAD")
 	t.Setenv("GIT_DIR", filepath.Join(t.TempDir(), "missing"))
@@ -73,18 +91,26 @@ func TestPrepareUsesMergeBaseAndIgnoresAmbientRepository(t *testing.T) {
 func TestPrepareDoesNotRunExternalDiffOrTextconv(t *testing.T) {
 	d := t.TempDir()
 	gitTest(t, d, "init", "-q")
-	os.WriteFile(filepath.Join(d, "a.txt"), []byte("base\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, "a.txt"), []byte("base\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "add", ".")
 	gitTest(t, d, "commit", "-qm", "base")
 	base := gitTest(t, d, "rev-parse", "HEAD")
-	os.WriteFile(filepath.Join(d, "a.txt"), []byte("head\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, "a.txt"), []byte("head\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "commit", "-qam", "head")
 	sentinel := filepath.Join(d, "executed")
 	script := filepath.Join(d, "dangerous-diff")
-	os.WriteFile(script, []byte("#!/bin/sh\ntouch '"+sentinel+"'\nprintf altered\n"), 0700)
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch '"+sentinel+"'\nprintf altered\n"), 0700); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "config", "diff.external", script)
 	gitTest(t, d, "config", "diff.test.textconv", script)
-	os.WriteFile(filepath.Join(d, ".git", "info", "attributes"), []byte("*.txt diff=test\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, ".git", "info", "attributes"), []byte("*.txt diff=test\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	s, e := Prepare(context.Background(), PrepareOptions{Repository: d, Base: base, ExactBase: true})
 	if e != nil {
 		t.Fatal(e)
@@ -99,19 +125,29 @@ func TestPrepareDoesNotRunExternalDiffOrTextconv(t *testing.T) {
 func TestPrepareIgnoresDirtyAndPrivateAttributes(t *testing.T) {
 	d := t.TempDir()
 	gitTest(t, d, "init", "-q")
-	os.WriteFile(filepath.Join(d, "a.txt"), []byte("base\n"), 0600)
-	os.WriteFile(filepath.Join(d, ".gitattributes"), []byte("*.txt diff\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, "a.txt"), []byte("base\n"), 0600); err != nil {
+		t.Error(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, ".gitattributes"), []byte("*.txt diff\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "add", ".")
 	gitTest(t, d, "commit", "-qm", "base")
 	base := gitTest(t, d, "rev-parse", "HEAD")
-	os.WriteFile(filepath.Join(d, "a.txt"), []byte("head\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, "a.txt"), []byte("head\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	gitTest(t, d, "commit", "-qam", "head")
 	clean, e := Prepare(context.Background(), PrepareOptions{Repository: d, Base: base, ExactBase: true})
 	if e != nil {
 		t.Fatal(e)
 	}
-	os.WriteFile(filepath.Join(d, ".gitattributes"), []byte("*.txt -diff\n"), 0600)
-	os.WriteFile(filepath.Join(d, ".git", "info", "attributes"), []byte("*.txt -diff\n"), 0600)
+	if err := os.WriteFile(filepath.Join(d, ".gitattributes"), []byte("*.txt -diff\n"), 0600); err != nil {
+		t.Error(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, ".git", "info", "attributes"), []byte("*.txt -diff\n"), 0600); err != nil {
+		t.Error(err)
+	}
 	dirty, e := Prepare(context.Background(), PrepareOptions{Repository: d, Base: base, ExactBase: true})
 	if e != nil {
 		t.Fatal(e)

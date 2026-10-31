@@ -9,6 +9,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/stats"
 )
 
+// Totals keeps known token totals separate from request count and completeness.
 type Totals struct {
 	Requests             int64  `json:"requests"`
 	FailedRequests       int64  `json:"failedRequests"`
@@ -20,6 +21,7 @@ type Totals struct {
 	TotalTokens          *int64 `json:"totalTokens"`
 }
 
+// ProviderUsage groups request totals by provider profile and model for reporting.
 type ProviderUsage struct {
 	ProviderID string   `json:"providerId"`
 	Provider   string   `json:"provider"`
@@ -28,6 +30,7 @@ type ProviderUsage struct {
 	Totals
 }
 
+// Period retains time bounds and request completeness alongside aggregated usage.
 type Period struct {
 	Days      int             `json:"days"`
 	Since     time.Time       `json:"since"`
@@ -36,6 +39,7 @@ type Period struct {
 	Reviews   ReviewTotals    `json:"reviews"`
 }
 
+// Report keeps usage periods, provider groups, and review outcomes on the same reporting clock.
 type Report struct {
 	SchemaVersion       int        `json:"schemaVersion"`
 	GeneratedAt         time.Time  `json:"generatedAt"`
@@ -46,6 +50,7 @@ type Report struct {
 	Periods             []Period   `json:"periods"`
 }
 
+// ReviewTotals counts review outcomes separately from provider calls and token totals.
 type ReviewTotals struct {
 	Total                       int64    `json:"total"`
 	Complete                    int64    `json:"complete"`
@@ -135,6 +140,7 @@ func (t *Totals) count(e Event) error {
 	return nil
 }
 
+// Generate builds usage periods from retained statistics while preserving unknown counts and tracking limits.
 func Generate(store Store, now time.Time, days []int) (Report, error) {
 	maxDays := 7
 	for _, d := range days {
@@ -169,7 +175,7 @@ func Generate(store Store, now time.Time, days []int) (Report, error) {
 			if !slices.Contains(group.Models, e.Model) {
 				group.Models = append(group.Models, e.Model)
 			}
-			if err := group.Totals.count(e); err != nil {
+			if err := group.count(e); err != nil {
 				return Report{}, err
 			}
 			if err := period.Total.count(e); err != nil {

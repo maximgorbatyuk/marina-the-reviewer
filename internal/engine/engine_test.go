@@ -18,8 +18,10 @@ import (
 
 func TestEscapedCredentialIsRedactedBeforePersistence(t *testing.T) {
 	const secret = "private-canary-token"
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":["\u0070rivate-canary-token"]}`}, "finish_reason": "stop"}}})
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":["\u0070rivate-canary-token"]}`}, "finish_reason": "stop"}}}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer a.Close()
 	c, route := routeFor(t, a.URL, "")
@@ -44,7 +46,7 @@ func TestEscapedCredentialIsRedactedBeforePersistence(t *testing.T) {
 }
 
 func TestResumeRejectsSupersededParentWithoutCoverage(t *testing.T) {
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(401) }))
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(401) }))
 	defer a.Close()
 	c, route := routeFor(t, a.URL, "")
 	p, e := BuildDocument(document(), route, "", nil)
@@ -52,7 +54,7 @@ func TestResumeRejectsSupersededParentWithoutCoverage(t *testing.T) {
 		t.Fatal(e)
 	}
 	dir := filepath.Join(t.TempDir(), "run")
-	Run(context.Background(), p, c, dir)
+	_, _ = Run(context.Background(), p, c, dir)
 	encoded, _ := json.Marshal(p)
 	store, e := runstore.Open(dir, review.Hash(string(encoded)))
 	if e != nil {
@@ -74,9 +76,9 @@ func TestResumeRejectsSupersededParentWithoutCoverage(t *testing.T) {
 }
 
 func TestResumeRejectsReplacementChangedLineLoss(t *testing.T) {
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(503) }))
 	defer a.Close()
-	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { okModel(w) }))
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { okModel(w) }))
 	defer b.Close()
 	c, route := routeFor(t, a.URL, b.URL)
 	p, e := BuildDocument(document(), route, "", nil)
@@ -124,8 +126,10 @@ func TestPlanRejectsChangedPreparedSourceAndBudget(t *testing.T) {
 
 func TestProviderCannotEchoCredentialIntoSavedArtifacts(t *testing.T) {
 	const secret = "private-canary-token"
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":["` + secret + `"]}`}, "finish_reason": "stop"}}})
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":["` + secret + `"]}`}, "finish_reason": "stop"}}}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer a.Close()
 	c, r := routeFor(t, a.URL, "")
@@ -144,7 +148,7 @@ func document() review.Document {
 	return review.Document{Version: 3, BaseSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", StartSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", HeadSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ManifestSha256: "manifest", Graph: review.Graph{Nodes: []review.GraphNode{}, Edges: []review.GraphEdge{}, Limitations: []string{}, Sha256: "graph"}, Coverage: review.Coverage{IsComplete: true}, Limitations: []string{}, Blocks: []review.Block{{ID: "b1", OriginalBlockID: "b1", FilePath: "a.go", Kind: "file", Head: &review.CodeSlice{Path: "a.go", Revision: review.Head, StartLine: 1, EndLine: 1, Content: "package changed", SymbolStartLine: 1, SymbolEndLine: 1, IsComplete: true}, HeadExists: true, PartIndex: 1, PartCount: 1, SymbolIDs: []string{}, ChangedLines: []review.ChangedLine{{Revision: review.Head, Line: 1}}, Limitations: []string{}, StructuralContext: []review.CodeSlice{}}}}
 }
 func okModel(w http.ResponseWriter) {
-	json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":[]}`}, "finish_reason": "stop"}}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":[]}`}, "finish_reason": "stop"}}})
 }
 func routeFor(t *testing.T, a, b string) (config.Config, config.Route) {
 	t.Helper()
@@ -161,16 +165,19 @@ func routeFor(t *testing.T, a, b string) (config.Config, config.Route) {
 }
 func TestFallbackUsesItsOwnModelBudgetAndResumeDoesNotRepeat(t *testing.T) {
 	var primary, backup atomic.Int32
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { primary.Add(1); w.WriteHeader(503) }))
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { primary.Add(1); w.WriteHeader(503) }))
 	defer a.Close()
 	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		backup.Add(1)
 		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
 		if body["model"] != "backup-model" {
 			t.Error("wrong fallback model")
 		}
-		if body["max_tokens"].(float64) >= 32768 {
+		maxTokens, ok := body["max_tokens"].(float64)
+		if !ok || maxTokens >= 32768 {
 			t.Error("wrong fallback budget")
 		}
 		okModel(w)
@@ -201,9 +208,9 @@ func TestFallbackUsesItsOwnModelBudgetAndResumeDoesNotRepeat(t *testing.T) {
 }
 func TestAuthenticationDoesNotTriggerFallback(t *testing.T) {
 	var fallback atomic.Int32
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(401) }))
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(401) }))
 	defer a.Close()
-	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fallback.Add(1); okModel(w) }))
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fallback.Add(1); okModel(w) }))
 	defer b.Close()
 	c, r := routeFor(t, a.URL, b.URL)
 	p, e := BuildDocument(document(), r, "", nil)
@@ -227,7 +234,9 @@ func TestFallbackIgnoresContextOfCompletedSibling(t *testing.T) {
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
 		var input struct {
 			Batch struct {
 				Blocks []struct {
@@ -235,13 +244,17 @@ func TestFallbackIgnoresContextOfCompletedSibling(t *testing.T) {
 				} `json:"blocks"`
 			} `json:"batch"`
 		}
-		json.Unmarshal([]byte(req.Messages[1].Content), &input)
+		if err := json.Unmarshal([]byte(req.Messages[1].Content), &input); err != nil {
+			t.Error(err)
+		}
 		ids := []string{}
 		for _, b := range input.Batch.Blocks {
 			ids = append(ids, b.ID)
 		}
 		model, _ := json.Marshal(map[string]any{"checkedBlockIds": ids, "findings": []any{}, "strengths": []any{}, "unconfirmedDependencies": []any{}})
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": string(model)}, "finish_reason": "stop"}}})
+		if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": string(model)}, "finish_reason": "stop"}}}); err != nil {
+			t.Error(err)
+		}
 	}
 	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if primaryCalls.Add(1) == 1 {
@@ -253,13 +266,13 @@ func TestFallbackIgnoresContextOfCompletedSibling(t *testing.T) {
 	defer a.Close()
 	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fallbackCalls.Add(1); respond(w, r) }))
 	defer b.Close()
-	c, route := routeFor(t, a.URL, b.URL)
+	c, _ := routeFor(t, a.URL, b.URL)
 	for name, p := range c.Profiles {
 		p.ContextLength = 32000
 		p.MaximumOutputTokens = 1000
 		c.Profiles[name] = p
 	}
-	route, _ = config.ResolveRouting(c, config.Overrides{})
+	route, _ := config.ResolveRouting(c, config.Overrides{})
 	d := document()
 	d.Blocks[0].Head.Content = strings.Repeat("a", 25000)
 	sibling := d.Blocks[0]
@@ -295,9 +308,11 @@ func TestFallbackIgnoresContextOfCompletedSibling(t *testing.T) {
 }
 func TestInvalidModelOutputHasOneCorrection(t *testing.T) {
 	var calls atomic.Int32
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"wrong":true}`}, "finish_reason": "stop"}}})
+		if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"wrong":true}`}, "finish_reason": "stop"}}}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer a.Close()
 	c, r := routeFor(t, a.URL, "")

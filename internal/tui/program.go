@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
+// Run starts the interactive terminal only when both input and output support it.
 func Run(ctx context.Context, path string, in io.Reader, out io.Writer) error {
 	input, okIn := in.(interface{ Fd() uintptr })
 	output, okOut := out.(interface{ Fd() uintptr })

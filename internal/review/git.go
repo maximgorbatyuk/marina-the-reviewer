@@ -86,6 +86,8 @@ func gitPinnedDiff(ctx context.Context, view, objects, head string, args ...stri
 	}
 	return b, nil
 }
+
+// Prepare reads pinned Git objects without changing the reviewed working tree.
 func Prepare(ctx context.Context, o PrepareOptions) (Snapshot, error) {
 	var s Snapshot
 	repo, e := filepath.Abs(o.Repository)
@@ -145,7 +147,7 @@ func Prepare(ctx context.Context, o PrepareOptions) (Snapshot, error) {
 	if e != nil {
 		return s, e
 	}
-	defer os.RemoveAll(view)
+	defer func() { _ = os.RemoveAll(view) }()
 	parts := bytes.Split(raw, []byte{0})
 	seen := map[string]bool{}
 	read := func(sha, path string, rev Revision, mode string) (*SourceSnapshot, string) {

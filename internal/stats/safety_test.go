@@ -73,10 +73,10 @@ func TestLegacyConflictRollsBackAndSizeLimitPreservesSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := db.QueryRow("SELECT count(*) FROM api_requests").Scan(&count); err != nil || count != 0 {
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM api_requests").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("partial import: %d %v", count, err)
 	}
-	db.Close()
+	_ = db.Close()
 	large := filepath.Join(t.TempDir(), "large.jsonl")
 	f, err := os.OpenFile(large, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestLegacyConflictRollsBackAndSizeLimitPreservesSource(t *testing.T) {
 	if err := f.Truncate(maxLedgerBytes + 1); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 	s = testStore(t)
 	s.LegacyPath = large
 	if _, err := s.Snapshot(fixedTime()); err == nil {
@@ -106,10 +106,10 @@ func TestFutureSchemaAndUnsafeSidecarArePreserved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("PRAGMA user_version=99"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "PRAGMA user_version=99"); err != nil {
 		t.Fatal(err)
 	}
-	db.Close()
+	_ = db.Close()
 	before, _ := os.ReadFile(s.Path)
 	if _, err := s.Snapshot(fixedTime()); err == nil {
 		t.Fatal("future schema accepted")
@@ -214,13 +214,13 @@ func TestStoragePragmasAndCancelledReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var mode int
-	if err := db.QueryRow("PRAGMA auto_vacuum").Scan(&mode); err != nil || mode != 2 {
+	if err := db.QueryRowContext(t.Context(), "PRAGMA auto_vacuum").Scan(&mode); err != nil || mode != 2 {
 		t.Fatalf("auto vacuum: %d %v", mode, err)
 	}
 	var journal string
-	if err := db.QueryRow("PRAGMA journal_mode").Scan(&journal); err != nil || journal != "wal" {
+	if err := db.QueryRowContext(t.Context(), "PRAGMA journal_mode").Scan(&journal); err != nil || journal != "wal" {
 		t.Fatalf("journal mode: %s %v", journal, err)
 	}
 	snapshot, err := s.Snapshot(end)
@@ -266,7 +266,7 @@ func TestMultipleProcessesInitializeAndAppend(t *testing.T) {
 	s := testStore(t)
 	commands := make([]*exec.Cmd, 4)
 	for i := range commands {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestProcessAppendHelper$")
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestProcessAppendHelper$")
 		cmd.Env = append(os.Environ(), "MARINADOREVIEW_STATS_TEST_PROCESS=1", "MARINADOREVIEW_STATS_TEST_PATH="+s.Path, "MARINADOREVIEW_STATS_TEST_ID="+fmt.Sprint(i), "GORACE=atexit_sleep_ms=0")
 		commands[i] = cmd
 		if err := cmd.Start(); err != nil {

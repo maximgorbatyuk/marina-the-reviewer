@@ -65,11 +65,11 @@ func TestDatabaseKeepsProviderExchange(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				defer db.Close()
+				defer func() { _ = db.Close() }()
 				var saved []byte
 				var complete sql.NullBool
 				var selectedKind string
-				if err := db.QueryRow("SELECT request_payload,response_complete,provider_kind FROM api_requests WHERE request_id='physical-attempt'").Scan(&saved, &complete, &selectedKind); err != nil {
+				if err := db.QueryRowContext(t.Context(), "SELECT request_payload,response_complete,provider_kind FROM api_requests WHERE request_id='physical-attempt'").Scan(&saved, &complete, &selectedKind); err != nil {
 					t.Error("request was not saved before sending:", err)
 				} else if selectedKind != "groq" || complete.Valid || scenario != "redacted" && scenario != "all-provider-keys" && !bytes.Equal(saved, requestBytes) {
 					t.Error("started request changed its payload or claimed a response")
@@ -85,7 +85,7 @@ func TestDatabaseKeepsProviderExchange(t *testing.T) {
 					w.Header().Set("Content-Length", fmt.Sprint(len(body)+10))
 				}
 				w.WriteHeader(status)
-				w.Write(body)
+				_, _ = w.Write(body)
 			}))
 			defer server.Close()
 			input := request()
@@ -113,12 +113,12 @@ func TestDatabaseKeepsProviderExchange(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			var requestBody, responseBody []byte
 			var url, profile, model, providerName, selectedKind string
 			var httpStatus int
 			var complete sql.NullBool
-			if err := db.QueryRow("SELECT request_url,request_payload,response_payload,http_status,response_complete,profile,model,provider,provider_kind FROM api_requests WHERE request_id='physical-attempt'").Scan(&url, &requestBody, &responseBody, &httpStatus, &complete, &profile, &model, &providerName, &selectedKind); err != nil {
+			if err := db.QueryRowContext(t.Context(), "SELECT request_url,request_payload,response_payload,http_status,response_complete,profile,model,provider,provider_kind FROM api_requests WHERE request_id='physical-attempt'").Scan(&url, &requestBody, &responseBody, &httpStatus, &complete, &profile, &model, &providerName, &selectedKind); err != nil {
 				t.Fatal(err)
 			}
 			requestBytes := <-received

@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-func readLanguageNeutralFunctions(source SourceSnapshot) []javaSymbol {
-	symbols, _ := readLanguageNeutralFunctionsContext(context.Background(), source)
-	return symbols
-}
 func readLanguageNeutralFunctionsContext(ctx context.Context, source SourceSnapshot) ([]javaSymbol, error) {
 	content := strings.ReplaceAll(source.Content, "\r\n", "\n")
 	masked, err := sanitizeJavaContext(ctx, content)
@@ -42,11 +38,11 @@ func readLanguageNeutralFunctionsContext(ctx context.Context, source SourceSnaps
 		}
 		next := i + 1
 		if token.text == "func" && next < len(tokens) && tokens[next].text == "(" {
-			close := matchingWithContext(ctx, tokens, next, "(", ")")
-			if close < 0 {
+			closing := matchingWithContext(ctx, tokens, next, "(", ")")
+			if closing < 0 {
 				continue
 			}
-			next = close + 1
+			next = closing + 1
 		}
 		if next < len(tokens) && tokens[next].text == "*" {
 			next++
@@ -57,20 +53,20 @@ func readLanguageNeutralFunctionsContext(ctx context.Context, source SourceSnaps
 		name := tokens[next].text
 		next++
 		if next < len(tokens) && tokens[next].text == "<" {
-			close := matchingWithContext(ctx, tokens, next, "<", ">")
-			if close < 0 {
+			closing := matchingWithContext(ctx, tokens, next, "<", ">")
+			if closing < 0 {
 				continue
 			}
-			next = close + 1
+			next = closing + 1
 		}
 		if next >= len(tokens) || tokens[next].text != "(" {
 			continue
 		}
-		close := matchingWithContext(ctx, tokens, next, "(", ")")
-		if close < 0 {
+		closing := matchingWithContext(ctx, tokens, next, "(", ")")
+		if closing < 0 {
 			continue
 		}
-		opening := close + 1
+		opening := closing + 1
 		for opening < len(tokens) && tokens[opening].text != "{" && tokens[opening].text != ";" {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -104,10 +100,6 @@ func readLanguageNeutralFunctionsContext(ctx context.Context, source SourceSnaps
 	return result, ctx.Err()
 }
 
-func appendLanguageNeutralMembers(source SourceSnapshot, tokens []javaToken, symbols []javaSymbol) []javaSymbol {
-	result, _ := appendLanguageNeutralMembersContext(context.Background(), source, tokens, symbols)
-	return result
-}
 func appendLanguageNeutralMembersContext(ctx context.Context, source SourceSnapshot, tokens []javaToken, symbols []javaSymbol) ([]javaSymbol, error) {
 	type memberRange struct {
 		name        string
@@ -150,8 +142,8 @@ func appendLanguageNeutralMembersContext(ctx context.Context, source SourceSnaps
 			if isJavaInvocationKeyword(name) {
 				continue
 			}
-			close := matchingWithContext(ctx, tokens, i, "(", ")")
-			if close < 0 {
+			closing := matchingWithContext(ctx, tokens, i, "(", ")")
+			if closing < 0 {
 				continue
 			}
 			start := declarationStartWithContext(ctx, tokens, i-1)
@@ -164,10 +156,10 @@ func appendLanguageNeutralMembersContext(ctx context.Context, source SourceSnaps
 				abstract = abstract || prefix.text == "abstract"
 			}
 			if invalid {
-				i = close
+				i = closing
 				continue
 			}
-			opening := close + 1
+			opening := closing + 1
 			if opening < len(tokens) && tokens[opening].text == ":" {
 				opening++
 				if opening < len(tokens) && tokens[opening].text == "{" {

@@ -2,19 +2,26 @@ package review
 
 import "encoding/json"
 
+// Revision distinguishes base evidence from head evidence in a pinned comparison.
 type Revision int
 
+// Base and Head identify the two source revisions used by changed lines and evidence.
 const (
 	Base Revision = iota
 	Head
 )
+
+// ArchitectureReview preserves the protocol purpose identifier used by review consumers.
 const ArchitectureReview = 3
 
+// PrepareOptions selects pinned revisions and bounds source size before Git objects are read.
 type PrepareOptions struct {
 	Repository, Base, Start, Head string
 	ExactBase                     bool
 	MaxFileBytes                  int64
 }
+
+// Snapshot binds file content and diffs to exact Git revisions for reproducible analysis.
 type Snapshot struct {
 	Version        int            `json:"version"`
 	Repository     string         `json:"repository"`
@@ -26,6 +33,8 @@ type Snapshot struct {
 	Limitations    []string       `json:"limitations"`
 	IsComplete     bool           `json:"isComplete"`
 }
+
+// SourceSnapshot retains source content with its revision and digest so evidence can be verified.
 type SourceSnapshot struct {
 	Path      string   `json:"path"`
 	Revision  Revision `json:"revision"`
@@ -33,6 +42,8 @@ type SourceSnapshot struct {
 	Sha256    string   `json:"sha256"`
 	Content   string   `json:"content"`
 }
+
+// FileSnapshot keeps both sides of a change with explicit reasons for unavailable source.
 type FileSnapshot struct {
 	OldPath      string          `json:"oldPath"`
 	NewPath      string          `json:"newPath"`
@@ -47,6 +58,8 @@ type FileSnapshot struct {
 	Hunks        []Hunk          `json:"hunks"`
 	ChangedLines []ChangedLine   `json:"changedLines"`
 }
+
+// Hunk retains the diff ranges needed to map changed lines to their source revisions.
 type Hunk struct {
 	OldStart int      `json:"oldStart"`
 	OldCount int      `json:"oldCount"`
@@ -54,10 +67,14 @@ type Hunk struct {
 	NewCount int      `json:"newCount"`
 	Lines    []string `json:"lines"`
 }
+
+// ChangedLine pairs a changed line number with the revision that contains it.
 type ChangedLine struct {
 	Revision Revision `json:"revision"`
 	Line     int      `json:"line"`
 }
+
+// CodeSlice marks whether supplied source covers a complete symbol or only a bounded excerpt.
 type CodeSlice struct {
 	Path            string   `json:"path"`
 	Revision        Revision `json:"revision"`
@@ -68,6 +85,8 @@ type CodeSlice struct {
 	SymbolEndLine   int      `json:"symbolEndLine"`
 	IsComplete      bool     `json:"isComplete"`
 }
+
+// Block keeps a review unit attached to its changed lines and original source identity.
 type Block struct {
 	ID                string        `json:"id"`
 	FilePath          string        `json:"filePath"`
@@ -84,6 +103,8 @@ type Block struct {
 	Limitations       []string      `json:"limitations"`
 	StructuralContext []CodeSlice   `json:"structuralContext"`
 }
+
+// GraphNode binds a symbol to its source revision so dependency claims can be checked.
 type GraphNode struct {
 	ID                string   `json:"id"`
 	SourceSymbolID    string   `json:"sourceSymbolId"`
@@ -99,6 +120,8 @@ type GraphNode struct {
 	CounterpartID     *string  `json:"counterpartId"`
 	CounterpartAbsent bool     `json:"counterpartAbsent"`
 }
+
+// GraphEdge records dependency resolution and uncertainty without inventing source relationships.
 type GraphEdge struct {
 	ID           string   `json:"id"`
 	Kind         string   `json:"kind"`
@@ -113,18 +136,24 @@ type GraphEdge struct {
 	Confidence   *float64 `json:"confidence"`
 	Reasons      []string `json:"reasons"`
 }
+
+// Graph keeps symbol relationships with their limitations and deterministic content identity.
 type Graph struct {
 	Nodes       []GraphNode `json:"nodes"`
 	Edges       []GraphEdge `json:"edges"`
 	Limitations []string    `json:"limitations"`
 	Sha256      string      `json:"sha256"`
 }
+
+// ChangeDisposition explains why a changed line is context or excluded from review coverage.
 type ChangeDisposition struct {
 	Path     string   `json:"path"`
 	Revision Revision `json:"revision"`
 	Line     int      `json:"line"`
 	Reason   string   `json:"reason"`
 }
+
+// Coverage records completeness separately from exclusions so missing input remains visible.
 type Coverage struct {
 	ExpectedChangedLines int                 `json:"expectedChangedLines"`
 	CoveredChangedLines  int                 `json:"coveredChangedLines"`
@@ -134,6 +163,8 @@ type Coverage struct {
 	ContextLines         []ChangeDisposition `json:"contextLines"`
 	ExcludedLines        []ChangeDisposition `json:"excludedLines"`
 }
+
+// Document keeps review blocks, dependency context, and coverage on the same source baseline.
 type Document struct {
 	Version            int         `json:"version"`
 	ManifestSha256     string      `json:"manifestSha256"`
@@ -148,11 +179,15 @@ type Document struct {
 	SelectionVersion   int         `json:"selectionVersion"`
 	DeclarationContext []CodeSlice `json:"declarationContext"`
 }
+
+// FilePart tracks a file across split batches so consumers can explain partial input.
 type FilePart struct {
 	Path  string `json:"path"`
 	Index int    `json:"index"`
 	Count int    `json:"count"`
 }
+
+// Batch groups source blocks with the graph identity required for one provider request.
 type Batch struct {
 	Index         int        `json:"index"`
 	Count         int        `json:"count"`
@@ -161,6 +196,8 @@ type Batch struct {
 	FileParts     []FilePart `json:"fileParts"`
 	IsWholeReview bool       `json:"isWholeReview"`
 }
+
+// BatchInput binds source revisions and task context to the exact batch sent for review.
 type BatchInput struct {
 	Version        int             `json:"version"`
 	Purpose        int             `json:"purpose"`
@@ -173,6 +210,8 @@ type BatchInput struct {
 	Limitations    []string        `json:"limitations"`
 	Task           json.RawMessage `json:"task"`
 }
+
+// Budget reserves schema, output, and safety capacity before source input is allocated.
 type Budget struct {
 	ContextLength            int `json:"contextLength"`
 	ReservedOutputTokens     int `json:"reservedOutputTokens"`
@@ -181,6 +220,8 @@ type Budget struct {
 	FixedOverheadTokens      int `json:"fixedOverheadTokens"`
 	AvailableUserInputTokens int `json:"availableUserInputTokens"`
 }
+
+// TokenCount records how token usage was estimated and whether the count is exact.
 type TokenCount struct {
 	TemplatedInputTokens     int    `json:"templatedInputTokens"`
 	SchemaReserveTokens      int    `json:"schemaReserveTokens"`
@@ -189,6 +230,8 @@ type TokenCount struct {
 	Limitation               string `json:"limitation"`
 	SchemaTokenizationMethod string `json:"schemaTokenizationMethod"`
 }
+
+// PreparedBatch binds prompts, limits, and input identity so execution can detect altered batches.
 type PreparedBatch struct {
 	Input                 BatchInput  `json:"input"`
 	Title                 string      `json:"title"`
@@ -204,6 +247,8 @@ type PreparedBatch struct {
 	ParentTaskID          *string     `json:"parentTaskId"`
 	ReplanDepth           int         `json:"replanDepth"`
 }
+
+// PreparedPlan retains all batches and completeness metadata before provider execution starts.
 type PreparedPlan struct {
 	Version        int             `json:"version"`
 	Purpose        int             `json:"purpose"`
@@ -214,16 +259,22 @@ type PreparedPlan struct {
 	GraphPreflight json.RawMessage `json:"graphPreflight"`
 	SplitReason    *string         `json:"splitReason"`
 }
+
+// PlanOptions supplies prompt and provider limits used to build prepared batches.
 type PlanOptions struct {
 	SystemPrompt                              string
 	ContextLength, OutputTokens, SafetyTokens int
 	Provider                                  string
 	Task                                      json.RawMessage
 }
+
+// Identity binds validation decisions to their run, pass, cluster, and policy version.
 type Identity struct {
 	RunID, PassID, ClusterID string
 	PolicyVersion            int
 }
+
+// Evidence ties a quoted source range to one supplied block and revision.
 type Evidence struct {
 	BlockID   string `json:"blockId"`
 	Revision  string `json:"revision"`
@@ -231,12 +282,16 @@ type Evidence struct {
 	EndLine   int    `json:"endLine"`
 	Quote     string `json:"quote"`
 }
+
+// Position keeps old and new coordinates distinct when findings are attached to a diff.
 type Position struct {
 	OldPath string `json:"oldPath"`
 	NewPath string `json:"newPath"`
 	OldLine *int   `json:"oldLine"`
 	NewLine *int   `json:"newLine"`
 }
+
+// Finding retains validated evidence and stable identity for an actionable review result.
 type Finding struct {
 	ID                      string    `json:"id"`
 	ReviewRunID             string    `json:"reviewRunId"`
@@ -256,6 +311,8 @@ type Finding struct {
 	InlinePosition          *Position `json:"inlinePosition"`
 	InlineSuppressionReason *string   `json:"inlineSuppressionReason"`
 }
+
+// Strength retains source evidence for a positive review observation.
 type Strength struct {
 	ReviewRunID   string  `json:"reviewRunId"`
 	ReviewPassID  string  `json:"reviewPassId"`
@@ -271,6 +328,8 @@ type Strength struct {
 	Confidence    float64 `json:"confidence"`
 	Fingerprint   string  `json:"fingerprint"`
 }
+
+// CandidateDecision preserves accepted and rejected model items so validation decisions can be inspected.
 type CandidateDecision struct {
 	ReviewClusterID string          `json:"reviewClusterId"`
 	ResultKind      string          `json:"resultKind"`
@@ -282,6 +341,8 @@ type CandidateDecision struct {
 	ReasonCode      string          `json:"reasonCode,omitempty"`
 	Reason          string          `json:"reason,omitempty"`
 }
+
+// Claim records the invariant and source range used for duplicate detection.
 type Claim struct {
 	Fingerprint string `json:"fingerprint"`
 	InvariantID string `json:"invariantId"`
@@ -290,6 +351,8 @@ type Claim struct {
 	EndLine     int    `json:"endLine"`
 	IsStrength  bool   `json:"isStrength"`
 }
+
+// EvidenceCorrection records coordinate repairs without losing the original declared evidence identity.
 type EvidenceCorrection struct {
 	ReviewClusterID      string `json:"reviewClusterId"`
 	ResultKind           string `json:"resultKind"`
@@ -304,6 +367,8 @@ type EvidenceCorrection struct {
 	CanonicalQuoteSha256 string `json:"canonicalQuoteSha256"`
 	CorrectionKind       string `json:"correctionKind"`
 }
+
+// DependencyRejection identifies a missing implementation that prevents a dependency claim from being accepted.
 type DependencyRejection struct {
 	ReviewClusterID string `json:"reviewClusterId"`
 	ResultKind      string `json:"resultKind"`
@@ -313,6 +378,8 @@ type DependencyRejection struct {
 	SymbolID        string `json:"symbolId"`
 	CallLine        int    `json:"callLine"`
 }
+
+// ChangedEvidenceAnchor binds a witness to an exact changed source line and digest.
 type ChangedEvidenceAnchor struct {
 	FilePath     string `json:"filePath"`
 	Revision     string `json:"revision"`
@@ -321,6 +388,8 @@ type ChangedEvidenceAnchor struct {
 	SourceSha256 string `json:"sourceSha256"`
 	IsPrimary    bool   `json:"isPrimary"`
 }
+
+// FindingWitness retains paired source anchors used to distinguish existing behavior from new defects.
 type FindingWitness struct {
 	Fingerprint              string                  `json:"fingerprint"`
 	RuleID                   string                  `json:"ruleId"`
@@ -331,12 +400,16 @@ type FindingWitness struct {
 	BaseSha                  string                  `json:"baseSha"`
 	HeadSha                  string                  `json:"headSha"`
 }
+
+// DuplicateRejection explains which validated finding was retained and why another was rejected.
 type DuplicateRejection struct {
 	RejectedFingerprint string                  `json:"rejectedFingerprint"`
 	RetainedFingerprint string                  `json:"retainedFingerprint"`
 	Reason              string                  `json:"reason"`
 	SharedBaseAnchors   []ChangedEvidenceAnchor `json:"sharedBaseAnchors"`
 }
+
+// BatchResult keeps findings, validation decisions, and coverage limitations together.
 type BatchResult struct {
 	Findings                []Finding             `json:"findings"`
 	Strengths               []Strength            `json:"strengths"`

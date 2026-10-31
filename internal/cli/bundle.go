@@ -358,18 +358,18 @@ func finishBundle(bundle *engine.BundleStore, status string, a arguments, out, e
 	if a.output != "" && a.output != "-" {
 		value := map[string]any{"schemaVersion": 2, "kind": "ReviewResultReference", "runId": bundle.Manifest.RunID, "passId": bundle.Manifest.PassID, "status": status, "resultRef": bundle.Manifest.Entries["result"]}
 		if err := runstore.AtomicJSON(a.output, value); err != nil {
-			fmt.Fprintln(errOut, err)
+			_, _ = fmt.Fprintln(errOut, err)
 			return 5
 		}
 	}
 	if a.archiveOutput != "" {
 		var archive engine.BundleArchive
 		if err := bundle.Content.Decode(bundle.Manifest.Entries["archive"], &archive); err != nil {
-			fmt.Fprintln(errOut, err)
+			_, _ = fmt.Fprintln(errOut, err)
 			return 5
 		}
 		if err := runstore.AtomicJSON(a.archiveOutput, archive); err != nil {
-			fmt.Fprintln(errOut, err)
+			_, _ = fmt.Fprintln(errOut, err)
 			return 5
 		}
 	}

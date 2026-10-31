@@ -11,6 +11,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
 
+// ExportPublic exports selected bundle content after removing private execution details.
 func (b *BundleStore) ExportPublic(destination string) error {
 	if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("public bundle export requires a new destination directory")

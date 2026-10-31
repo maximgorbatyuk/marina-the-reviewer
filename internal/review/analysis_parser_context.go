@@ -130,7 +130,7 @@ func javaTokensContext(ctx context.Context, s string) ([]javaToken, error) {
 	return out, ctx.Err()
 }
 
-func matchingWithContext(ctx context.Context, tokens []javaToken, start int, open, close string) int {
+func matchingWithContext(ctx context.Context, tokens []javaToken, start int, open, closing string) int {
 	depth := 0
 	for i := start; i < len(tokens); i++ {
 		if i&255 == 0 && ctx.Err() != nil {
@@ -139,7 +139,7 @@ func matchingWithContext(ctx context.Context, tokens []javaToken, start int, ope
 		if tokens[i].text == open {
 			depth++
 		}
-		if tokens[i].text == close {
+		if tokens[i].text == closing {
 			depth--
 			if depth == 0 {
 				return i
@@ -287,11 +287,11 @@ func readJavaWithUnicodePolicyContext(ctx context.Context, s SourceSnapshot, all
 			if slices.Contains([]string{"if", "for", "while", "switch", "catch", "synchronized", "new", "try", "this", "super"}, name) {
 				continue
 			}
-			close := matchingWithContext(ctx, tokens, i, "(", ")")
-			if close < 0 {
+			closing := matchingWithContext(ctx, tokens, i, "(", ")")
+			if closing < 0 {
 				continue
 			}
-			next := close + 1
+			next := closing + 1
 			if next < len(tokens) && tokens[next].text == "throws" {
 				for next < len(tokens) && tokens[next].text != "{" && tokens[next].text != ";" {
 					if err := ctx.Err(); err != nil {
@@ -301,7 +301,7 @@ func readJavaWithUnicodePolicyContext(ctx context.Context, s SourceSnapshot, all
 				}
 			}
 			if next >= len(tokens) || (tokens[next].text != "{" && tokens[next].text != ";") {
-				i = close
+				i = closing
 				continue
 			}
 			start := declarationStartWithContext(ctx, tokens, i-1)
@@ -331,11 +331,11 @@ func readJavaWithUnicodePolicyContext(ctx context.Context, s SourceSnapshot, all
 			}
 			parameters := 0
 			paramTypes := []string{}
-			if close > i+1 {
+			if closing > i+1 {
 				parameters = 1
 				level := 0
 				segment := i + 1
-				for j := i + 1; j <= close; j++ {
+				for j := i + 1; j <= closing; j++ {
 					if err := ctx.Err(); err != nil {
 						return nil, nil, nil, err
 					}
@@ -346,7 +346,7 @@ func readJavaWithUnicodePolicyContext(ctx context.Context, s SourceSnapshot, all
 					if v == ">" || v == ")" || v == "]" {
 						level--
 					}
-					if j == close || v == "," && level == 0 {
+					if j == closing || v == "," && level == 0 {
 						part := tokens[segment:j]
 						if len(part) > 0 {
 							typeParts := []string{}
@@ -360,7 +360,7 @@ func readJavaWithUnicodePolicyContext(ctx context.Context, s SourceSnapshot, all
 							}
 							paramTypes = append(paramTypes, strings.Join(typeParts, ""))
 						}
-						if j != close {
+						if j != closing {
 							parameters++
 						}
 						segment = j + 1

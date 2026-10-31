@@ -2,10 +2,12 @@ package review
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 )
 
+// GraphProjection limits graph content to symbols and relationships visible to a review batch.
 type GraphProjection struct {
 	Nodes            []GraphNode `json:"nodes"`
 	Edges            []GraphEdge `json:"edges"`
@@ -24,6 +26,8 @@ func intersects(n GraphNode, s *CodeSlice) bool {
 func containsLine(n GraphNode, line int, s *CodeSlice) bool {
 	return s != nil && n.Path == s.Path && n.Revision == s.Revision && line >= s.StartLine && line <= s.EndLine
 }
+
+// ProjectGraph uses a background context for callers without cancellation support.
 func ProjectGraph(full Graph, batch Batch) GraphProjection {
 	all := map[string]GraphNode{}
 	changed, visible, included := map[string]bool{}, map[string]bool{}, map[string]bool{}
@@ -200,6 +204,8 @@ func shared(before, after any) any {
 	}
 	return []any{before, after}
 }
+
+// ProjectGraphContext selects graph nodes and edges that the supplied source blocks can support.
 func ProjectGraphContext(ctx context.Context, full Graph, batch Batch) (GraphProjection, error) {
 	projector, err := newGraphProjectorContext(ctx, full)
 	if err != nil {
@@ -225,10 +231,14 @@ func ProjectGraphContext(ctx context.Context, full Graph, batch Batch) (GraphPro
 	}
 	return graph, nil
 }
+
+// SerializeInput uses a background context for callers without cancellation support.
 func SerializeInput(input BatchInput) string {
 	wire, _ := serializeProjectedInput(context.Background(), input, ProjectGraph(input.Graph, input.Batch))
 	return wire
 }
+
+// SerializeInputContext writes the compatible batch input shape with bounded cancellation checks.
 func SerializeInputContext(ctx context.Context, input BatchInput) (string, error) {
 	graph, err := ProjectGraphContext(ctx, input.Graph, input.Batch)
 	if err != nil {
@@ -268,8 +278,15 @@ func serializeProjectedInput(ctx context.Context, input BatchInput, g GraphProje
 		key := canonicalJSON(head)
 		row := []any{e.ID, e.SourceID, e.Line}
 		if i, ok := edgeIndex[key]; ok {
-			prior := edgeGroups[i].([]any)
-			prior[9] = append(prior[9].([]any), row)
+			prior, ok := edgeGroups[i].([]any)
+			if !ok {
+				return "", errors.New("invalid graph edge group")
+			}
+			rows, ok := prior[9].([]any)
+			if !ok {
+				return "", errors.New("invalid graph edge rows")
+			}
+			prior[9] = append(rows, row)
 		} else {
 			edgeIndex[key] = len(edgeGroups)
 			edgeGroups = append(edgeGroups, append(head, []any{row}))

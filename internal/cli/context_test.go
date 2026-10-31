@@ -85,7 +85,7 @@ func TestBundleInferenceCancellationKeepsUnknownAndDoesNotRepeat(t *testing.T) {
 	var calls atomic.Int32
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		started <- struct{}{}
 		<-release
@@ -155,7 +155,7 @@ func cpuCancellationFixture(t *testing.T) ([]string, string) {
 	}
 	git := func(args ...string) string {
 		t.Helper()
-		command := exec.Command("git", append([]string{"-C", repository}, args...)...)
+		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", repository}, args...)...)
 		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 		raw, err := command.CombinedOutput()
 		if err != nil {

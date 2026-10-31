@@ -26,10 +26,6 @@ type contextTrialState struct {
 	seen        map[contextSliceKey]bool
 }
 
-func parseContextImports(content string) contextImportText {
-	result, _ := parseContextImportsContext(context.Background(), content)
-	return result
-}
 func parseContextImportsContext(ctx context.Context, content string) (contextImportText, error) {
 	result := contextImportText{lines: lines(content)}
 	result.full = strings.Join(result.lines, "\n")

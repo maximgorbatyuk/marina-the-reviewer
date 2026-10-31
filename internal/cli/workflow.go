@@ -42,7 +42,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	}
 	if command == "config" {
 		if len(rest) == 0 || rest[0] != "init" {
-			fmt.Fprintln(errOut, "usage: marinadoreview config init [--config PATH]")
+			_, _ = fmt.Fprintln(errOut, "usage: marinadoreview config init [--config PATH]")
 			return 2
 		}
 		command = "config-init"
@@ -50,7 +50,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	}
 	if command == "prompts" {
 		if len(rest) == 0 || rest[0] != "show" {
-			fmt.Fprintln(errOut, "usage: marinadoreview prompts show --builtin review")
+			_, _ = fmt.Fprintln(errOut, "usage: marinadoreview prompts show --builtin review")
 			return 2
 		}
 		fs := flag.NewFlagSet("prompts show", flag.ContinueOnError)
@@ -67,7 +67,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	}
 	if command == "compat" {
 		if len(rest) == 0 || (rest[0] != "import" && rest[0] != "export") {
-			fmt.Fprintln(errOut, "usage: marinadoreview compat import|export --input PATH")
+			_, _ = fmt.Fprintln(errOut, "usage: marinadoreview compat import|export --input PATH")
 			return 2
 		}
 		command = "compat-" + rest[0]
@@ -76,7 +76,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	switch command {
 	case "prepare", "plan", "run", "review", "validate", "archive", "compat-import", "compat-export", "config-init":
 	default:
-		fmt.Fprintf(errOut, "unknown command: %s\n", command)
+		_, _ = fmt.Fprintf(errOut, "unknown command: %s\n", command)
 		return 2
 	}
 	a, err := parseArguments(command, rest, errOut)
@@ -87,37 +87,37 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		return 2
 	}
 	if a.requestTimeoutSeconds != 0 && (command != "plan" && command != "review" || a.requestTimeoutSeconds < 1 || a.requestTimeoutSeconds > 86400) {
-		fmt.Fprintln(errOut, "--request-timeout-seconds requires plan or review and a value from 1 to 86400")
+		_, _ = fmt.Fprintln(errOut, "--request-timeout-seconds requires plan or review and a value from 1 to 86400")
 		return 2
 	}
 	if a.provider != "" && command != "plan" && command != "review" {
-		fmt.Fprintln(errOut, "--provider requires plan or review")
+		_, _ = fmt.Fprintln(errOut, "--provider requires plan or review")
 		return 2
 	}
 	if a.artifactsDir != "" {
 		return executeBundle(ctx, command, a, in, out, errOut)
 	}
 	if a.maxBundleUniqueBytes != runstore.MaximumBundleBytes || a.maxBundleParts != runstore.MaximumContentParts || a.deadlineSeconds != 3600 {
-		fmt.Fprintln(errOut, "bundle resource flags require --artifacts-dir")
+		_, _ = fmt.Fprintln(errOut, "bundle resource flags require --artifacts-dir")
 		return 2
 	}
 	if a.exportDir != "" {
-		fmt.Fprintln(errOut, "--export-dir requires archive --artifacts-dir")
+		_, _ = fmt.Fprintln(errOut, "--export-dir requires archive --artifacts-dir")
 		return 2
 	}
 	if err = validateArchivePaths(command, a); err != nil {
-		fmt.Fprintln(errOut, err)
+		_, _ = fmt.Fprintln(errOut, err)
 		return 2
 	}
 	if command == "archive" {
 		archive, err := engine.ExportArchive(a.runDir)
 		if err != nil {
-			fmt.Fprintln(errOut, err)
+			_, _ = fmt.Fprintln(errOut, err)
 			return 5
 		}
 		if a.output != "" && a.output != "-" {
 			if err = archive.Write(a.output); err != nil {
-				fmt.Fprintln(errOut, "output could not be written")
+				_, _ = fmt.Fprintln(errOut, "output could not be written")
 				return 5
 			}
 			return 0
@@ -125,11 +125,11 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		return outputValue(archive, a.output, out, errOut)
 	}
 	if a.failOn != "" && a.failOn != "warning" && a.failOn != "error" && a.failOn != "critical" {
-		fmt.Fprintln(errOut, "--fail-on must be warning, error or critical")
+		_, _ = fmt.Fprintln(errOut, "--fail-on must be warning, error or critical")
 		return 2
 	}
 	if command == "run" && (a.provider != "" || a.profile != "" || a.fallback != "" || a.noFallback || a.baseURL != "" || a.model != "" || a.contextLength != 0 || a.maxOutput != 0 || a.systemPrompt != "" || a.promptFile != "" || a.taskFile != "") {
-		fmt.Fprintln(errOut, "run uses a fixed plan; use plan to change providers, routing, prompt or budgets")
+		_, _ = fmt.Fprintln(errOut, "run uses a fixed plan; use plan to change providers, routing, prompt or budgets")
 		return 2
 	}
 	stdinUsers := 0
@@ -139,26 +139,26 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		}
 	}
 	if stdinUsers > 1 || a.apiKeyFile == "-" {
-		fmt.Fprintln(errOut, "stdin can supply only one JSON or prompt document; use a private token file or environment variable")
+		_, _ = fmt.Fprintln(errOut, "stdin can supply only one JSON or prompt document; use a private token file or environment variable")
 		return 2
 	}
 	if a.format != "native" && a.format != "marina-v3" {
-		fmt.Fprintln(errOut, "unsupported output format")
+		_, _ = fmt.Fprintln(errOut, "unsupported output format")
 		return 2
 	}
 	if a.format == "marina-v3" && (command == "prepare" || command == "config-init" || command == "compat-import") {
-		fmt.Fprintln(errOut, "this command creates a native document; export a plan or result for Marina")
+		_, _ = fmt.Fprintln(errOut, "this command creates a native document; export a plan or result for Marina")
 		return 2
 	}
 	if a.batchIndex < 0 || a.eventsFile == "-" {
-		fmt.Fprintln(errOut, "invalid batch index or event output path")
+		_, _ = fmt.Fprintln(errOut, "invalid batch index or event output path")
 		return 2
 	}
 	if a.eventsFile != "" && a.output != "-" {
 		left, _ := filepath.Abs(a.eventsFile)
 		right, _ := filepath.Abs(a.output)
 		if left == right {
-			fmt.Fprintln(errOut, "result and events require separate files")
+			_, _ = fmt.Fprintln(errOut, "result and events require separate files")
 			return 2
 		}
 	}
@@ -168,7 +168,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 			e = config.Init(path)
 		}
 		if e != nil {
-			fmt.Fprintln(errOut, e)
+			_, _ = fmt.Fprintln(errOut, e)
 			return 2
 		}
 		return outputValue(map[string]string{"config": path}, a.output, out, errOut)
@@ -196,7 +196,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		if cancelled := contextExit(ctx, errOut); cancelled != 0 {
 			return cancelled
 		}
-		fmt.Fprintln(errOut, e)
+		_, _ = fmt.Fprintln(errOut, e)
 		return code
 	}
 	var value any
@@ -488,7 +488,7 @@ func parseArguments(command string, args []string, errOut io.Writer) (arguments,
 		return a, e
 	}
 	if f.NArg() != 0 || a.maxBytes < 1 || a.maxBytes > runstore.MaximumDocumentBytes {
-		fmt.Fprintln(errOut, "invalid positional argument or document byte limit")
+		_, _ = fmt.Fprintln(errOut, "invalid positional argument or document byte limit")
 		return a, errors.New("invalid arguments")
 	}
 	return a, nil
@@ -504,7 +504,7 @@ func outputValue(value any, path string, out, errOut io.Writer) int {
 		err = encoder.Encode(value)
 	}
 	if err != nil {
-		fmt.Fprintln(errOut, "output could not be written:", err)
+		_, _ = fmt.Fprintln(errOut, "output could not be written:", err)
 		return 5
 	}
 	return 0
@@ -580,11 +580,11 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 	}
 	a.runDir = dir
 	if err := validateArchivePaths("run", a); err != nil {
-		fmt.Fprintln(errOut, err)
+		_, _ = fmt.Fprintln(errOut, err)
 		return 2
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
-		fmt.Fprintln(errOut, "run directory could not be created")
+		_, _ = fmt.Fprintln(errOut, "run directory could not be created")
 		return 5
 	}
 	result, err := engine.Run(ctx, p, c, dir)
@@ -592,7 +592,7 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 		if cancelled := contextExit(ctx, errOut); cancelled != 0 {
 			return cancelled
 		}
-		fmt.Fprintln(errOut, err)
+		_, _ = fmt.Fprintln(errOut, err)
 		var configurationError *engine.ConfigurationError
 		if errors.As(err, &configurationError) {
 			return 2
@@ -612,7 +612,7 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 			archiveErr = archive.Write(a.archiveOutput)
 		}
 		if archiveErr != nil {
-			fmt.Fprintln(errOut, "execution archive could not be written:", archiveErr)
+			_, _ = fmt.Fprintln(errOut, "execution archive could not be written:", archiveErr)
 			return 5
 		}
 	}
@@ -626,7 +626,7 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 			e = writeEvents(a.eventsFile, data)
 		}
 		if e != nil {
-			fmt.Fprintln(errOut, "events could not be written")
+			_, _ = fmt.Fprintln(errOut, "events could not be written")
 			return 5
 		}
 	}
@@ -634,7 +634,7 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 		return cancelled
 	}
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		_, _ = fmt.Fprintln(errOut, err)
 		if result.Status == "failed" {
 			return 4
 		}
@@ -653,11 +653,11 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 
 func contextExit(ctx context.Context, errOut io.Writer) int {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		fmt.Fprintln(errOut, "review deadline exceeded")
+		_, _ = fmt.Fprintln(errOut, "review deadline exceeded")
 		return 124
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
-		fmt.Fprintln(errOut, "review canceled")
+		_, _ = fmt.Fprintln(errOut, "review canceled")
 		return 130
 	}
 	return 0
@@ -677,7 +677,7 @@ func writeEvents(path string, data []byte) error {
 	if e != nil {
 		return e
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	if _, e = f.Write(data); e == nil {
 		e = f.Sync()
 	}

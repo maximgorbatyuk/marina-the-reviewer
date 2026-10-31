@@ -12,9 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the SQLite driver used by private statistics storage.
 )
 
+// DefaultStore resolves private statistics storage and optional legacy import settings.
 func DefaultStore() (Store, error) {
 	selected, legacy := os.Getenv("MARINADOREVIEW_DB_FILE"), os.Getenv("MARINADOREVIEW_USAGE_FILE")
 	s := Store{}
@@ -48,6 +49,7 @@ func DefaultStore() (Store, error) {
 	return s, nil
 }
 
+// DefaultPath returns the resolved private statistics database path.
 func DefaultPath() (string, error) { s, err := DefaultStore(); return s.Path, err }
 
 func privateInfo(info os.FileInfo, directory bool) bool {
@@ -76,7 +78,7 @@ func lockFile(path string) (*os.File, error) {
 	}
 	info, err := f.Stat()
 	if err != nil || !privateInfo(info, false) {
-		f.Close()
+		_ = f.Close()
 		return nil, errors.New("statistics lock must be private and owned")
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -86,7 +88,7 @@ func lockFile(path string) (*os.File, error) {
 			return f, nil
 		}
 		if (!errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN)) || time.Now().After(deadline) {
-			f.Close()
+			_ = f.Close()
 			return nil, errors.New("statistics database is busy")
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -102,13 +104,13 @@ type session struct {
 	lock   *os.File
 }
 
-func (s *session) close() { s.db.Close(); s.cancel(); unlockFile(s.lock) }
+func (s *session) close() { _ = s.db.Close(); s.cancel(); unlockFile(s.lock) }
 
 func (s Store) open(write bool, now time.Time) (*session, error) {
 	if s.Path == "" {
 		return nil, errors.New("statistics database path is required")
 	}
-	info, err := checkFile(s.Path)
+	_, err := checkFile(s.Path)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -136,7 +138,7 @@ func (s Store) open(write bool, now time.Time) (*session, error) {
 		return nil, err
 	}
 	fail := func(e error) (*session, error) { unlockFile(lock); return nil, e }
-	info, err = checkFile(s.Path)
+	info, err := checkFile(s.Path)
 	if err != nil && !os.IsNotExist(err) {
 		return fail(err)
 	}
@@ -146,7 +148,7 @@ func (s Store) open(write bool, now time.Time) (*session, error) {
 			return fail(errors.New("cannot create statistics database"))
 		}
 		info, e = f.Stat()
-		f.Close()
+		_ = f.Close()
 		if e != nil {
 			return fail(errors.New("cannot inspect statistics database"))
 		}
@@ -163,7 +165,7 @@ func (s Store) open(write bool, now time.Time) (*session, error) {
 		}
 		header := make([]byte, 100)
 		_, e = io.ReadFull(f, header)
-		f.Close()
+		_ = f.Close()
 		if e != nil || string(header[:16]) != "SQLite format 3\x00" {
 			return fail(errors.New("statistics file is not a SQLite database"))
 		}

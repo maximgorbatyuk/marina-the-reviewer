@@ -1,3 +1,4 @@
+// Package usage attributes provider calls to operations without requiring global recording state.
 package usage
 
 import (
@@ -9,12 +10,14 @@ import (
 	"time"
 )
 
+// Metadata binds request attribution and payload data before an inference operation starts.
 type Metadata struct {
 	ProviderID, Provider, ProviderKind, Profile, Model string
 	RequestURL                                         string
 	RequestPayload                                     []byte
 }
 
+// Response carries response metadata so usage recording can distinguish failed and incomplete requests.
 type Response struct {
 	Payload    []byte
 	HTTPStatus int
@@ -29,6 +32,7 @@ const (
 	requestKey
 )
 
+// Recorder tracks pending usage writes so shutdown can report persistence failures.
 type Recorder struct {
 	path    string
 	mu      sync.Mutex
@@ -37,21 +41,30 @@ type Recorder struct {
 	pending sync.WaitGroup
 }
 
+// NewRecorder creates a recorder for an explicit statistics path or the platform default.
 func NewRecorder(path string) *Recorder { return &Recorder{path: path} }
+
+// WithRecorder attaches usage recording to operations without a global recorder.
 func WithRecorder(ctx context.Context, r *Recorder) context.Context {
 	return context.WithValue(ctx, recorderKey, r)
 }
+
+// WithOperation attributes nested provider requests to the caller's operation.
 func WithOperation(ctx context.Context, operation string) context.Context {
 	return context.WithValue(ctx, operationKey, operation)
 }
+
+// Enabled reports whether the context contains a usage recorder before payload capture is attempted.
 func Enabled(ctx context.Context) bool { r, _ := ctx.Value(recorderKey).(*Recorder); return r != nil }
 
 type reviewIdentity struct{ runID, passID string }
 
+// WithReview links provider usage to the review run and pass that caused it.
 func WithReview(ctx context.Context, runID, passID string) context.Context {
 	return context.WithValue(ctx, reviewKey, reviewIdentity{runID, passID})
 }
 
+// WithRequestID lets retries and inference logs share the caller's request identity.
 func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, requestKey, requestID)
 }
@@ -63,6 +76,7 @@ func (r *Recorder) store() (Store, error) {
 	return DefaultStore()
 }
 
+// RecordReview records a review outcome without changing the command's execution result.
 func RecordReview(ctx context.Context, review Review) {
 	r, _ := ctx.Value(recorderKey).(*Recorder)
 	if r == nil {
@@ -94,6 +108,7 @@ func (r *Recorder) remember(err error) {
 	}
 }
 
+// Begin records request start and returns an idempotent function for recording its finish.
 func Begin(ctx context.Context, meta Metadata) func(Counts, string, Response) {
 	r, _ := ctx.Value(recorderKey).(*Recorder)
 	if r == nil {
@@ -147,6 +162,7 @@ func Begin(ctx context.Context, meta Metadata) func(Counts, string, Response) {
 	}
 }
 
+// Close waits briefly for pending writes and returns the first recording failure.
 func (r *Recorder) Close() error {
 	r.mu.Lock()
 	r.closed = true

@@ -11,6 +11,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
 
+// BundleWork keeps resumable work state separate from content stored by reference.
 type BundleWork struct {
 	WorkID        string               `json:"workId"`
 	ParentWorkID  string               `json:"parentWorkId"`
@@ -41,6 +42,7 @@ type bundleState struct {
 	ArchiveAttempts []json.RawMessage `json:"archiveAttempts"`
 }
 
+// BundleArchive combines bundle work and attempts for offline execution inspection.
 type BundleArchive struct {
 	SchemaVersion  int                 `json:"schemaVersion"`
 	Kind           string              `json:"kind"`
@@ -61,6 +63,7 @@ type BundleArchive struct {
 	Outputs        []bundleOutput      `json:"outputs"`
 }
 
+// Encode packs execution state into content references for bounded private storage.
 func (b *BundleStore) Encode(value any) ([]byte, error) {
 	s, ok := value.(state)
 	if !ok {
@@ -103,10 +106,12 @@ func (b *BundleStore) Encode(value any) ([]byte, error) {
 	return json.Marshal(stored)
 }
 
+// Decode uses a background context for callers without cancellation support.
 func (b *BundleStore) Decode(raw []byte, value any) error {
 	return b.DecodeContext(context.Background(), raw, value)
 }
 
+// DecodeContext reconstructs execution state from verified bundle references.
 func (b *BundleStore) DecodeContext(ctx context.Context, raw []byte, value any) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -173,9 +178,9 @@ func (b *BundleStore) packAttempt(attempt ArchiveAttempt) (json.RawMessage, erro
 	metadata.RawOutput = ""
 	metadata.Schema = nil
 	if attempt.Diagnostic != nil {
-		copy := *attempt.Diagnostic
-		copy.RawResponse = ""
-		metadata.Diagnostic = &copy
+		cloned := *attempt.Diagnostic
+		cloned.RawResponse = ""
+		metadata.Diagnostic = &cloned
 	}
 	raw, err := json.Marshal(metadata)
 	if err != nil {
@@ -215,10 +220,6 @@ func (b *BundleStore) packAttempt(attempt ArchiveAttempt) (json.RawMessage, erro
 		}
 	}
 	return json.Marshal(fields)
-}
-
-func (b *BundleStore) readAttempt(raw json.RawMessage) (ArchiveAttempt, error) {
-	return b.readAttemptContext(context.Background(), raw)
 }
 
 func (b *BundleStore) readAttemptContext(ctx context.Context, raw json.RawMessage) (ArchiveAttempt, error) {
@@ -270,6 +271,7 @@ func (b *BundleStore) readAttemptContext(ctx context.Context, raw json.RawMessag
 	return attempt, nil
 }
 
+// ExportArchive exports bundle execution details without requiring another provider call.
 func (b *BundleStore) ExportArchive(plan Plan, directory string) (BundleArchive, error) {
 	var archive BundleArchive
 	store, err := runstore.OpenWithCodec(directory, b.Manifest.PlanHash, b)
@@ -329,6 +331,7 @@ func (b *BundleStore) ExportArchive(plan Plan, directory string) (BundleArchive,
 	return archive, b.SaveManifest()
 }
 
+// PublicArchive removes private attempt data from an archive intended for sharing.
 func (b *BundleStore) PublicArchive(plan Plan) (BundleArchive, error) {
 	var archive BundleArchive
 	ref, ok := b.Manifest.Entries["archive"]
@@ -380,10 +383,12 @@ func (b *BundleStore) PublicArchive(plan Plan) (BundleArchive, error) {
 	return archive, nil
 }
 
+// CanResume uses a background context for callers without cancellation support.
 func (b *BundleStore) CanResume(plan Plan, directory string) (bool, error) {
 	return b.CanResumeContext(context.Background(), plan, directory)
 }
 
+// CanResumeContext checks saved work before offering to resume an interrupted review.
 func (b *BundleStore) CanResumeContext(ctx context.Context, plan Plan, directory string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err

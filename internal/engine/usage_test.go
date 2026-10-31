@@ -17,11 +17,13 @@ import (
 
 func TestUsageCountsRetriesFallbackAndNotResume(t *testing.T) {
 	var primary, backup atomic.Int32
-	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { primary.Add(1); w.WriteHeader(503) }))
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { primary.Add(1); w.WriteHeader(503) }))
 	defer a.Close()
-	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		backup.Add(1)
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":[]}`}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 14, "completion_tokens": 6, "total_tokens": 20}})
+		if err := json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"checkedBlockIds":["b1"],"findings":[],"strengths":[],"unconfirmedDependencies":[]}`}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 14, "completion_tokens": 6, "total_tokens": 20}}); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer b.Close()
 	cfg, _ := routeFor(t, a.URL, b.URL)
@@ -81,12 +83,12 @@ func TestUsageCountsRetriesFallbackAndNotResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	rows, err := db.Query("SELECT profile,provider_kind FROM api_requests")
+	defer func() { _ = db.Close() }()
+	rows, err := db.QueryContext(t.Context(), "SELECT profile,provider_kind FROM api_requests")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	counts := map[string]int{}
 	for rows.Next() {
 		var profile, kind string

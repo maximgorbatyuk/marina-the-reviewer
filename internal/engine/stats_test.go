@@ -20,7 +20,7 @@ func TestReviewStatisticsCancellationAndFailure(t *testing.T) {
 		t.Run(map[bool]string{false: "failed", true: "canceled"}[canceled], func(t *testing.T) {
 			started := make(chan struct{}, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				io.Copy(io.Discard, r.Body)
+				_, _ = io.Copy(io.Discard, r.Body)
 				if canceled {
 					started <- struct{}{}
 					<-r.Context().Done()
@@ -73,7 +73,7 @@ func TestReviewStatisticsCancellationAndFailure(t *testing.T) {
 }
 
 func TestReviewStatisticsFailureDoesNotFailReview(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { okModel(w) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { okModel(w) }))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
 	plan, err := BuildDocument(document(), route, "", nil)
@@ -112,7 +112,7 @@ func TestReviewPreflightDoesNotCreateStatistics(t *testing.T) {
 
 func TestCompletedLegacyResumeDoesNotFabricateStatistics(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); okModel(w) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); okModel(w) }))
 	defer server.Close()
 	cfg, route := routeFor(t, server.URL, "")
 	plan, err := BuildDocument(document(), route, "", nil)

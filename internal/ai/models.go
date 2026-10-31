@@ -14,6 +14,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 )
 
+// ListModels returns the provider catalogue without sending source code for inference.
 func ListModels(ctx context.Context, provider config.ProviderSnapshot, token string) ([]string, error) {
 	endpoint, err := chatEndpoint(provider.Profile.BaseURL)
 	if err != nil {
@@ -46,7 +47,7 @@ func ListModels(ctx context.Context, provider config.ProviderSnapshot, token str
 		}
 		return nil, &Error{Code: code, Message: "model request did not complete"}
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		code := "request_rejected"
 		switch {

@@ -33,8 +33,13 @@ func assertShortDeadlineFallback(t *testing.T, rateLimit bool) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"working\"}}]}\n\n"))
-		w.(http.Flusher).Flush()
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"working\"}}]}\n\n"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		} else {
+			t.Error("test response writer does not support flushing")
+			return
+		}
 		<-r.Context().Done()
 	}))
 	defer primary.Close()
@@ -104,8 +109,13 @@ func TestStreamingTimeoutRetriesThenReplansForConfiguredFallback(t *testing.T) {
 			primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				primaryCalls.Add(1)
 				w.Header().Set("Content-Type", "text/event-stream")
-				w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"continued analysis\",\"content\":\"partial\"}}]}\n\n"))
-				w.(http.Flusher).Flush()
+				_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"continued analysis\",\"content\":\"partial\"}}]}\n\n"))
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				} else {
+					t.Error("test response writer does not support flushing")
+					return
+				}
 				<-request.Context().Done()
 			}))
 			defer primary.Close()

@@ -21,18 +21,22 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
+// Baseline pins the source contract revision used by compatibility metadata.
 const Baseline = "acd37b498f1c9367b4044e8f9d5ad55b90617e59"
 
+// ConfigurationError separates invalid execution configuration from provider and contract failures.
 type ConfigurationError struct{ Message string }
 
 func (e *ConfigurationError) Error() string { return e.Message }
 
+// Producer identifies the binary that wrote a persisted review document.
 type Producer struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Commit  string `json:"commit"`
 }
 
+// Compatibility records contract and schema identities so incompatible documents can be rejected.
 type Compatibility struct {
 	BaselineCommit          string `json:"baselineCommit"`
 	ProtocolVersion         int    `json:"protocolVersion"`
@@ -41,10 +45,12 @@ type Compatibility struct {
 	ProtocolSha256          string `json:"protocolSha256"`
 }
 
+// Contract returns the contract identities embedded in documents produced by this binary.
 func Contract() Compatibility {
 	return Compatibility{Baseline, 3, 2, review.Hash(string(review.ResponseSchema())), review.Hash(strings.TrimPrefix(review.SystemPrompt(""), "\n\n"))}
 }
 
+// Snapshot wraps pinned source data with producer and compatibility metadata.
 type Snapshot struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Kind          string          `json:"kind"`
@@ -54,6 +60,7 @@ type Snapshot struct {
 	Task          json.RawMessage `json:"task"`
 }
 
+// Document wraps analysis data with the task and compatibility metadata needed for planning.
 type Document struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Kind          string          `json:"kind"`
@@ -63,6 +70,7 @@ type Document struct {
 	Task          json.RawMessage `json:"task"`
 }
 
+// Plan binds source, routing, and prepared batches for validated execution and resume.
 type Plan struct {
 	SchemaVersion   int                 `json:"schemaVersion"`
 	Kind            string              `json:"kind"`
@@ -77,6 +85,7 @@ type Plan struct {
 	bundle          *BundleStore
 }
 
+// Attempt records timing and outcome metadata without requiring the full provider payload.
 type Attempt struct {
 	WorkID              string    `json:"workId"`
 	Role                string    `json:"role"`
@@ -94,6 +103,7 @@ type Attempt struct {
 	ParentWorkID        string    `json:"parentWorkId,omitempty"`
 }
 
+// Result binds validated findings to their run identity and execution attempts.
 type Result struct {
 	SchemaVersion int                `json:"schemaVersion"`
 	Kind          string             `json:"kind"`
@@ -134,8 +144,10 @@ type state struct {
 	ArchiveAttempts []ArchiveAttempt `json:"archiveAttempts,omitempty"`
 }
 
+// Identity identifies this binary in persisted review artifacts.
 func Identity() Producer { return Producer{"marinadoreview", buildinfo.Version, buildinfo.Commit} }
 
+// UUID creates a random run identity without relying on provider or repository state.
 func UUID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -146,6 +158,7 @@ func UUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
+// WrapSnapshot adds producer and contract metadata to pinned source data.
 func WrapSnapshot(snapshot review.Snapshot, task json.RawMessage) Snapshot {
 	if len(task) == 0 {
 		task = json.RawMessage("null")
@@ -153,10 +166,12 @@ func WrapSnapshot(snapshot review.Snapshot, task json.RawMessage) Snapshot {
 	return Snapshot{1, "ReviewSnapshot", Identity(), Contract(), snapshot, task}
 }
 
+// Build uses a background context for callers without cancellation support.
 func Build(snapshot Snapshot, route config.Route, prompt string) (Plan, error) {
 	return BuildContext(context.Background(), snapshot, route, prompt)
 }
 
+// BuildContext analyzes a pinned snapshot and prepares a plan within the selected provider limits.
 func BuildContext(ctx context.Context, snapshot Snapshot, route config.Route, prompt string) (Plan, error) {
 	if err := ctx.Err(); err != nil {
 		return Plan{}, err
@@ -178,10 +193,12 @@ func options(provider config.ProviderSnapshot, prompt string, task json.RawMessa
 	return review.PlanOptions{SystemPrompt: prompt, ContextLength: provider.Profile.ContextLength, OutputTokens: provider.Profile.MaximumOutputTokens, Provider: provider.Name, Task: task}
 }
 
+// BuildDocument uses a background context for callers without cancellation support.
 func BuildDocument(document review.Document, route config.Route, prompt string, task json.RawMessage) (Plan, error) {
 	return BuildDocumentContext(context.Background(), document, route, prompt, task)
 }
 
+// BuildDocumentContext prepares validated analysis data for execution within provider token limits.
 func BuildDocumentContext(ctx context.Context, document review.Document, route config.Route, prompt string, task json.RawMessage) (Plan, error) {
 	if err := ctx.Err(); err != nil {
 		return Plan{}, err
@@ -199,10 +216,12 @@ func BuildDocumentContext(ctx context.Context, document review.Document, route c
 	return Plan{SchemaVersion: 1, Kind: "ReviewPlan", Producer: Identity(), Compatibility: Contract(), RunID: UUID(), PassID: UUID(), Document: document, Route: route, Prepared: prepared, DeadlineSeconds: 3600}, nil
 }
 
+// Validate uses a background context for callers without cancellation support.
 func (p Plan) Validate() error {
 	return p.ValidateContext(context.Background())
 }
 
+// ValidateContext rejects altered or inconsistent plan data before provider execution.
 func (p Plan) ValidateContext(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -370,6 +389,7 @@ func canonicalValuesEqualContext(ctx context.Context, expected, actual any) (boo
 	return bytes.Equal(a, b), nil
 }
 
+// Run executes a validated plan while persisting enough state to resume interrupted work.
 func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (result Result, runErr error) {
 	if err := plan.ValidateContext(ctx); err != nil {
 		return Result{}, err
@@ -713,11 +733,6 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 	return result, nil
 }
 
-func replanWork(s *state, index int, provider config.ProviderSnapshot) bool {
-	replanned, _ := replanWorkContext(context.Background(), s, index, provider)
-	return replanned
-}
-
 func replanWorkContext(ctx context.Context, s *state, index int, provider config.ProviderSnapshot) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -796,11 +811,6 @@ func redactOutput(raw json.RawMessage, tokens map[string]string) json.RawMessage
 		return nil
 	}
 	return encoded
-}
-
-func scopeDocument(document review.Document, prepared review.PreparedBatch) review.Document {
-	document, _ = scopeDocumentContext(context.Background(), document, prepared)
-	return document
 }
 
 func scopeDocumentContext(ctx context.Context, document review.Document, prepared review.PreparedBatch) (review.Document, error) {
@@ -984,10 +994,6 @@ func validateSavedResultsContext(ctx context.Context, plan Plan, s state) error 
 		return errors.New("saved run is missing planned source batches")
 	}
 	return nil
-}
-
-func sourceLines(prepared review.PreparedBatch) (map[string]string, error) {
-	return sourceLinesContext(context.Background(), prepared)
 }
 
 func sourceLinesContext(ctx context.Context, prepared review.PreparedBatch) (map[string]string, error) {

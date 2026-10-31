@@ -20,6 +20,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
+// Request binds review prompts, response schema, and output limits for one inference call.
 type Request struct {
 	SystemPrompt        string
 	UserPrompt          string
@@ -29,12 +30,14 @@ type Request struct {
 	RedactionSecrets    map[string]string
 }
 
+// Usage keeps missing provider token counts distinct from reported zero values.
 type Usage struct {
 	InputTokens  *int `json:"inputTokens"`
 	OutputTokens *int `json:"outputTokens"`
 	TotalTokens  *int `json:"totalTokens"`
 }
 
+// Response retains provider output and usage so review execution can validate and record them.
 type Response struct {
 	Output                   json.RawMessage `json:"output"`
 	RawOutput                string          `json:"-"`
@@ -47,6 +50,7 @@ type Response struct {
 	Channel                  string          `json:"channel"`
 }
 
+// Error classifies provider failures without exposing authorization data.
 type Error struct {
 	Code       string        `json:"code"`
 	Message    string        `json:"message"`
@@ -57,11 +61,13 @@ type Error struct {
 
 func (err *Error) Error() string { return err.Code + ": " + err.Message }
 
+// IsRetryable identifies provider failures for which retry policy permits another attempt.
 func IsRetryable(err error) bool {
 	var providerErr *Error
 	return errors.As(err, &providerErr) && (providerErr.Code == "network_error" || providerErr.Code == "timeout" || providerErr.Code == "rate_limit" || providerErr.Code == "server_error")
 }
 
+// Complete sends one inference request and retains the provider response for validation.
 func Complete(ctx context.Context, provider config.ProviderSnapshot, token string, input Request) (result Response, callErr error) {
 	started := time.Now()
 	defer func() { result.Elapsed = time.Since(started) }()
@@ -166,7 +172,7 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		}
 		return Response{}, &Error{Code: code, Message: message}
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	data, readErr := io.ReadAll(response.Body)
 	complete := readErr == nil
 	recorded.HTTPStatus, recorded.Complete = response.StatusCode, &complete

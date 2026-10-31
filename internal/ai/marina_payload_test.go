@@ -16,8 +16,8 @@ func TestMimoPresetSendsMarinaPayload(t *testing.T) {
 	var preset *Preset
 	for _, candidate := range Presets() {
 		if candidate.Provider == config.ProviderXiaomiMiMo {
-			copy := candidate
-			preset = &copy
+			cloned := candidate
+			preset = &cloned
 		}
 		if candidate.Profile.TimeoutSeconds != 3300 {
 			t.Errorf("preset %s has timeout %d", candidate.Name, candidate.Profile.TimeoutSeconds)
@@ -46,7 +46,7 @@ func TestMimoPresetSendsMarinaPayload(t *testing.T) {
 			t.Errorf("payload differs from Marina: got %+v", body)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"ok\\\":true}\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"ok\\\":true}\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 	}))
 	defer server.Close()
 	preset.Profile.BaseURL = server.URL

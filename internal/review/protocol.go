@@ -18,18 +18,25 @@ import (
 //go:embed assets/*
 var assets embed.FS
 
+// ResponseSchema returns a copy so callers cannot modify the embedded output contract.
 func ResponseSchema() json.RawMessage {
 	b, _ := assets.ReadFile("assets/response-schema.json")
 	return json.RawMessage(b)
 }
+
+// DefaultSystemPrompt returns the embedded review instructions used when no override is supplied.
 func DefaultSystemPrompt() string {
 	p, _ := assets.ReadFile("assets/architecture-prompt.txt")
 	return SystemPrompt(string(p))
 }
+
+// SystemPrompt appends evidence protocol instructions to the caller's review policy.
 func SystemPrompt(policy string) string {
 	p, _ := assets.ReadFile("assets/protocol.txt")
 	return strings.TrimRight(policy, " \t\r\n") + "\n\n" + string(p)
 }
+
+// Hash creates deterministic content identities for persisted and transmitted review data.
 func Hash(value string) string { b := sha256.Sum256([]byte(value)); return hex.EncodeToString(b[:]) }
 func marshal(v any) []byte {
 	var b bytes.Buffer
@@ -132,13 +139,19 @@ func calibratedContext(ctx context.Context, value string) (int, error) {
 	}
 	return int(math.Ceil((float64(ascii)/4 + float64(other)) * 1.5)), nil
 }
+
+// EstimateTokens provides a conservative estimate when no provider tokenizer is available.
 func EstimateTokens(system, user string, schema json.RawMessage) int {
 	return calibrated(system) + calibrated(user) + 256 + calibrated(string(schema)) + 128
 }
+
+// CountTokens uses a background context for callers without cancellation support.
 func CountTokens(system, user string, schema json.RawMessage) TokenCount {
 	count, _ := CountTokensContext(context.Background(), system, user, schema)
 	return count
 }
+
+// CountTokensContext records estimation limits so callers do not mistake estimates for exact token counts.
 func CountTokensContext(ctx context.Context, system, user string, schema json.RawMessage) (TokenCount, error) {
 	systemTokens, err := calibratedContext(ctx, system)
 	if err != nil {
@@ -154,6 +167,8 @@ func CountTokensContext(ctx context.Context, system, user string, schema json.Ra
 	}
 	return TokenCount{TemplatedInputTokens: systemTokens + userTokens + 256, SchemaReserveTokens: schemaTokens + 128, Method: "estimate:unicode-aware-1.5x+256-chat-overhead", Limitation: "No verified provider tokenizer is available. The estimate uses a 1.5 safety factor and relies on bounded context-overflow replanning.", SchemaTokenizationMethod: "estimate:unicode-aware-1.5x+128-wrapper"}, nil
 }
+
+// FindingID derives a stable finding identity from validated run and evidence identities.
 func FindingID(run, pass, fingerprint string) (string, error) {
 	normalize := func(v string) (string, error) {
 		v = strings.ReplaceAll(v, "-", "")
@@ -176,6 +191,8 @@ func FindingID(run, pass, fingerprint string) (string, error) {
 	b, _ := hex.DecodeString(Hash(r + "|" + p + "|" + fingerprint)[:32])
 	return fmt.Sprintf("%x-%x-%x-%x-%x", []byte{b[3], b[2], b[1], b[0]}, []byte{b[5], b[4]}, []byte{b[7], b[6]}, b[8:10], b[10:16]), nil
 }
+
+// Fingerprint derives a comparison key from the rule, invariant, and supplied evidence.
 func Fingerprint(rule, invariant string, evidence []Evidence, blocks map[string]Block) string {
 	keys := []string{}
 	for _, e := range evidence {
