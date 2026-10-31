@@ -25,13 +25,17 @@ type arguments struct {
 	noFallback, json                                                              bool
 	contextLength, maxOutput, batchIndex                                          int
 	maxBytes                                                                      int64
+	artifactsDir                                                                  string
+	exportDir                                                                     string
+	maxBundleUniqueBytes                                                          int64
+	maxBundleParts, deadlineSeconds                                               int
 }
 
 func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
 	command := args[0]
 	rest := args[1:]
 	if command == "capabilities" {
-		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "executionArchiveVersion": engine.ExecutionArchiveVersion, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
+		return outputValue(map[string]any{"tool": "marina-the-reviewer", "command": "marinadoreview", "schemaVersion": 1, "protocolVersion": 3, "validationPolicyVersion": 2, "baselineCommit": engine.Baseline, "executionArchiveVersion": engine.ExecutionArchiveVersion, "reviewArtifactBundleVersion": engine.ReviewArtifactBundleVersion, "reviewResumeVersion": 1, "backends": []string{"openai-compatible"}, "primaryFallback": true, "javaSemanticAnalysis": true, "nonJavaFallback": true, "resume": true}, "-", out, errOut)
 	}
 	if command == "config" {
 		if len(rest) == 0 || rest[0] != "init" {
@@ -77,6 +81,17 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		return 0
 	}
 	if err != nil {
+		return 2
+	}
+	if a.artifactsDir != "" {
+		return executeBundle(ctx, command, a, in, out, errOut)
+	}
+	if a.maxBundleUniqueBytes != runstore.MaximumBundleBytes || a.maxBundleParts != runstore.MaximumContentParts || a.deadlineSeconds != 3600 {
+		fmt.Fprintln(errOut, "bundle resource flags require --artifacts-dir")
+		return 2
+	}
+	if a.exportDir != "" {
+		fmt.Fprintln(errOut, "--export-dir requires archive --artifacts-dir")
 		return 2
 	}
 	if err = validateArchivePaths(command, a); err != nil {
@@ -167,9 +182,8 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		return b, nil
 	}
 	fail := func(e error, code int) int {
-		if ctx.Err() != nil {
-			fmt.Fprintln(errOut, "review canceled")
-			return 130
+		if cancelled := contextExit(ctx, errOut); cancelled != 0 {
+			return cancelled
 		}
 		fmt.Fprintln(errOut, e)
 		return code
@@ -211,7 +225,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		if e != nil {
 			return fail(e, 2)
 		}
-		plan, e := engine.Build(snapshot, route, prompt)
+		plan, e := engine.BuildContext(ctx, snapshot, route, prompt)
 		if e != nil {
 			return fail(e, 5)
 		}
@@ -246,7 +260,7 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 			if json.Unmarshal(raw, &s) != nil {
 				return fail(errors.New("invalid snapshot"), 5)
 			}
-			plan, e = engine.Build(s, route, prompt)
+			plan, e = engine.BuildContext(ctx, s, route, prompt)
 		case "ReviewPlan":
 			var old engine.Plan
 			if json.Unmarshal(raw, &old) != nil || old.SchemaVersion != 1 || old.Compatibility != engine.Contract() {
@@ -259,13 +273,13 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 			if prompt == "" && len(old.Prepared.Batches) > 0 {
 				prompt = old.Prepared.Batches[0].SystemPrompt
 			}
-			plan, e = engine.BuildDocument(old.Document, route, prompt, task)
+			plan, e = engine.BuildDocumentContext(ctx, old.Document, route, prompt, task)
 		case "ReviewDocument":
 			var doc engine.Document
 			if json.Unmarshal(raw, &doc) != nil || doc.SchemaVersion != 1 || doc.Compatibility != engine.Contract() {
 				return fail(errors.New("invalid review document"), 5)
 			}
-			plan, e = engine.BuildDocument(doc.Document, route, prompt, doc.Task)
+			plan, e = engine.BuildDocumentContext(ctx, doc.Document, route, prompt, doc.Task)
 		default:
 			return fail(errors.New("plan requires a native snapshot, document or plan"), 5)
 		}
@@ -406,6 +420,9 @@ func execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 			return fail(e, 5)
 		}
 	}
+	if cancelled := contextExit(ctx, errOut); cancelled != 0 {
+		return cancelled
+	}
 	return outputValue(value, a.output, out, errOut)
 }
 
@@ -427,6 +444,11 @@ func parseArguments(command string, args []string, errOut io.Writer) (arguments,
 	f.StringVar(&a.headSHA, "head-sha", "", "exact head commit")
 	f.StringVar(&a.config, "config", "", "provider configuration path")
 	f.StringVar(&a.runDir, "run-dir", "", "private resume directory")
+	f.StringVar(&a.artifactsDir, "artifacts-dir", "", "private version 2 artifact bundle and resume directory")
+	f.StringVar(&a.exportDir, "export-dir", "", "new directory for a self-contained public bundle export")
+	f.Int64Var(&a.maxBundleUniqueBytes, "max-bundle-unique-bytes", runstore.MaximumBundleBytes, "maximum unique bundle bytes")
+	f.IntVar(&a.maxBundleParts, "max-bundle-parts", runstore.MaximumContentParts, "maximum unique bundle parts")
+	f.IntVar(&a.deadlineSeconds, "deadline-seconds", 3600, "total bundle review deadline in seconds")
 	f.StringVar(&a.eventsFile, "events-file", "", "separate JSONL events path")
 	f.StringVar(&a.archiveOutput, "archive-output", "", "private execution archive JSON path")
 	f.StringVar(&a.systemPrompt, "system-prompt", "", "review policy override")
@@ -469,7 +491,7 @@ func outputValue(value any, path string, out, errOut io.Writer) int {
 		err = encoder.Encode(value)
 	}
 	if err != nil {
-		fmt.Fprintln(errOut, "output could not be written")
+		fmt.Fprintln(errOut, "output could not be written:", err)
 		return 5
 	}
 	return 0
@@ -518,6 +540,9 @@ func loadPrompt(a arguments, read func(string) (json.RawMessage, error)) (string
 }
 
 func executePlan(ctx context.Context, p engine.Plan, c config.Config, a arguments, out, errOut io.Writer) int {
+	if cancelled := contextExit(ctx, errOut); cancelled != 0 {
+		return cancelled
+	}
 	dir := a.runDir
 	if dir == "" {
 		dir = filepath.Join("review-run", p.RunID)
@@ -533,6 +558,9 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 	}
 	result, err := engine.Run(ctx, p, c, dir)
 	if result.Kind == "" {
+		if cancelled := contextExit(ctx, errOut); cancelled != 0 {
+			return cancelled
+		}
 		fmt.Fprintln(errOut, err)
 		var configurationError *engine.ConfigurationError
 		if errors.As(err, &configurationError) {
@@ -571,9 +599,8 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 			return 5
 		}
 	}
-	if ctx.Err() != nil {
-		fmt.Fprintln(errOut, "review canceled")
-		return 130
+	if cancelled := contextExit(ctx, errOut); cancelled != 0 {
+		return cancelled
 	}
 	if err != nil {
 		fmt.Fprintln(errOut, err)
@@ -589,6 +616,18 @@ func executePlan(ctx context.Context, p engine.Plan, c config.Config, a argument
 				return 10
 			}
 		}
+	}
+	return 0
+}
+
+func contextExit(ctx context.Context, errOut io.Writer) int {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		fmt.Fprintln(errOut, "review deadline exceeded")
+		return 124
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		fmt.Fprintln(errOut, "review canceled")
+		return 130
 	}
 	return 0
 }

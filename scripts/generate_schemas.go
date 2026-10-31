@@ -13,6 +13,7 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/engine"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
 )
 
 func shape(t reflect.Type) map[string]any {
@@ -64,14 +65,18 @@ func shape(t reflect.Type) map[string]any {
 }
 
 func main() {
-	types := map[string]reflect.Type{"review-execution-archive": reflect.TypeFor[engine.ExecutionArchive](), "review-document": reflect.TypeFor[engine.Document](), "review-snapshot": reflect.TypeFor[engine.Snapshot](), "review-plan": reflect.TypeFor[engine.Plan](), "review-result": reflect.TypeFor[engine.Result](), "config": reflect.TypeFor[config.Config](), "marina-prepared-batch-v3": reflect.TypeFor[review.PreparedBatch](), "marina-batch-result-v3": reflect.TypeFor[review.BatchResult]()}
+	types := map[string]reflect.Type{"review-execution-archive": reflect.TypeFor[engine.ExecutionArchive](), "review-document": reflect.TypeFor[engine.Document](), "review-snapshot": reflect.TypeFor[engine.Snapshot](), "review-plan": reflect.TypeFor[engine.Plan](), "review-result": reflect.TypeFor[engine.Result](), "config": reflect.TypeFor[config.Config](), "marina-prepared-batch-v3": reflect.TypeFor[review.PreparedBatch](), "marina-batch-result-v3": reflect.TypeFor[review.BatchResult](), "review-artifact-bundle-v2": reflect.TypeFor[engine.ArtifactBundle](), "review-plan-v2": reflect.TypeFor[engine.BundlePlan](), "review-prepared-batch-v2": reflect.TypeFor[engine.BundlePreparedBatch](), "review-execution-archive-v2": reflect.TypeFor[engine.BundleArchive](), "review-content-reference": reflect.TypeFor[runstore.ContentRef]()}
 	for name, t := range types {
 		schema := shape(t)
 		schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
 		schema["title"] = name
 		if properties, ok := schema["properties"].(map[string]any); ok {
 			if _, has := properties["schemaVersion"]; has {
-				properties["schemaVersion"] = map[string]any{"const": 1}
+				version := 1
+				if strings.HasSuffix(name, "-v2") {
+					version = 2
+				}
+				properties["schemaVersion"] = map[string]any{"const": version}
 			}
 		}
 		data, err := json.MarshalIndent(schema, "", "  ")

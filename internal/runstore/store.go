@@ -2,6 +2,7 @@ package runstore
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +21,20 @@ const MaximumExecutionDocumentBytes = 128 << 20
 type Store struct {
 	dir, planHash string
 	lock          *os.File
+	codec         Codec
+}
+
+type Codec interface {
+	Encode(any) ([]byte, error)
+	Decode([]byte, any) error
+}
+
+func OpenWithCodec(dir, planHash string, codec Codec) (*Store, error) {
+	store, err := Open(dir, planHash)
+	if err == nil {
+		store.codec = codec
+	}
+	return store, err
 }
 
 type envelope struct {
@@ -114,14 +129,26 @@ func (s *Store) Read(target any) error {
 	if json.Unmarshal(data, &stored) != nil || stored.Version != 1 || stored.PlanHash != s.planHash || stored.StateSha256 == "" || stateHash(stored.State) != stored.StateSha256 {
 		return errors.New("saved run identity is invalid")
 	}
-	if json.Unmarshal(stored.State, target) != nil {
-		return errors.New("saved run state is invalid")
+	var decodeErr error
+	if s.codec == nil {
+		decodeErr = json.Unmarshal(stored.State, target)
+	} else {
+		decodeErr = s.codec.Decode(stored.State, target)
+	}
+	if decodeErr != nil {
+		return fmt.Errorf("saved run state is invalid: %w", decodeErr)
 	}
 	return nil
 }
 
 func (s *Store) Write(value any) error {
-	data, err := json.Marshal(value)
+	var data []byte
+	var err error
+	if s.codec == nil {
+		data, err = json.Marshal(value)
+	} else {
+		data, err = s.codec.Encode(value)
+	}
 	if err != nil {
 		return err
 	}
@@ -182,30 +209,20 @@ func ReadBoundedFile(path string, maximum int64) ([]byte, error) {
 }
 
 func AtomicJSON(path string, value any) error {
-	return AtomicJSONLimit(path, value, MaximumDocumentBytes)
+	return AtomicJSONContext(context.Background(), path, value)
 }
-
+func AtomicJSONContext(ctx context.Context, path string, value any) error {
+	return AtomicJSONLimitContext(ctx, path, value, MaximumDocumentBytes)
+}
 func AtomicJSONLimit(path string, value any, maximum int) error {
-	if maximum < 1 {
-		return errors.New("document size limit must be positive")
-	}
-	var buffer bytes.Buffer
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(value); err != nil {
+	return AtomicJSONLimitContext(context.Background(), path, value, maximum)
+}
+func AtomicJSONLimitContext(ctx context.Context, path string, value any, maximum int) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if buffer.Len() > maximum {
-		var compact bytes.Buffer
-		if err := json.Compact(&compact, buffer.Bytes()); err != nil {
-			return err
-		}
-		compact.WriteByte('\n')
-		if compact.Len() > maximum {
-			return errors.New("saved document exceeds the size limit")
-		}
-		buffer = compact
+	if maximum < 1 {
+		return errors.New("document size limit must be positive")
 	}
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
 		return errors.New("output must be a regular file")
@@ -222,13 +239,38 @@ func AtomicJSONLimit(path string, value any, maximum int) error {
 	}
 	temporary := f.Name()
 	defer os.Remove(temporary)
-	if _, err = f.Write(buffer.Bytes()); err == nil {
+	encode := func(pretty bool) error {
+		writer := &boundedArtifactWriter{writer: &contentContextWriter{ctx: ctx, writer: f}, maximum: int64(maximum), artifact: filepath.Base(path)}
+		encoder := json.NewEncoder(writer)
+		encoder.SetEscapeHTML(false)
+		if pretty {
+			encoder.SetIndent("", "  ")
+		}
+		return encoder.Encode(value)
+	}
+	err = encode(true)
+	if cancellation := ctx.Err(); cancellation != nil {
+		err = cancellation
+	}
+	var sizeError *ArtifactSizeError
+	if errors.As(err, &sizeError) {
+		if err = f.Truncate(0); err == nil {
+			_, err = f.Seek(0, io.SeekStart)
+		}
+		if err == nil {
+			err = encode(false)
+		}
+	}
+	if err == nil {
 		err = f.Sync()
 	}
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
 		return err
 	}
 	if err = os.Rename(temporary, path); err != nil {
@@ -241,4 +283,30 @@ func AtomicJSONLimit(path string, value any, maximum int) error {
 		}
 	}
 	return nil
+}
+
+type ArtifactSizeError struct {
+	Artifact string
+	Actual   int64
+	Allowed  int64
+}
+
+func (e *ArtifactSizeError) Error() string {
+	return fmt.Sprintf("saved document exceeds the size limit: artifact=%s actual=%d allowed=%d bytes", e.Artifact, e.Actual, e.Allowed)
+}
+
+type boundedArtifactWriter struct {
+	writer   io.Writer
+	maximum  int64
+	written  int64
+	artifact string
+}
+
+func (w *boundedArtifactWriter) Write(data []byte) (int, error) {
+	if w.written+int64(len(data)) > w.maximum {
+		return 0, &ArtifactSizeError{w.artifact, w.written + int64(len(data)), w.maximum}
+	}
+	n, err := w.writer.Write(data)
+	w.written += int64(n)
+	return n, err
 }

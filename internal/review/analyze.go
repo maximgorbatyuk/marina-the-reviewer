@@ -1,6 +1,7 @@
 package review
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"slices"
@@ -24,127 +25,15 @@ type javaUnit struct {
 }
 
 func sanitizeJava(s string) string {
-	b := []byte(s)
-	quote := byte(0)
-	block, lineComment, textBlock, escaped := false, false, false, false
-	for i := 0; i < len(b); i++ {
-		c := s[i]
-		if c == '\n' {
-			lineComment = false
-			if quote != '\x00' && !textBlock {
-				quote = 0
-			}
-			continue
-		}
-		if lineComment {
-			b[i] = ' '
-			continue
-		}
-		if block {
-			b[i] = ' '
-			if c == '*' && i+1 < len(b) && s[i+1] == '/' {
-				b[i+1] = ' '
-				i++
-				block = false
-			}
-			continue
-		}
-		if textBlock {
-			b[i] = ' '
-			if c == '"' && i+2 < len(b) && s[i:i+3] == `"""` {
-				b[i+1] = ' '
-				b[i+2] = ' '
-				i += 2
-				textBlock = false
-			}
-			continue
-		}
-		if quote != 0 {
-			b[i] = ' '
-			if escaped {
-				escaped = false
-			} else if c == '\\' {
-				escaped = true
-			} else if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		if c == '/' && i+1 < len(b) {
-			if s[i+1] == '/' {
-				b[i] = ' '
-				b[i+1] = ' '
-				i++
-				lineComment = true
-				continue
-			}
-			if s[i+1] == '*' {
-				b[i] = ' '
-				b[i+1] = ' '
-				i++
-				block = true
-				continue
-			}
-		}
-		if c == '"' && i+2 < len(b) && s[i:i+3] == `"""` {
-			b[i] = ' '
-			b[i+1] = ' '
-			b[i+2] = ' '
-			i += 2
-			textBlock = true
-			continue
-		}
-		if c == '"' || c == '\'' {
-			quote = c
-			b[i] = ' '
-		}
-	}
-	return string(b)
+	value, _ := sanitizeJavaContext(context.Background(), s)
+	return value
 }
 func javaTokens(s string) []javaToken {
-	out := []javaToken{}
-	line := 1
-	for i := 0; i < len(s); {
-		c := s[i]
-		if c == '\n' {
-			line++
-			i++
-			continue
-		}
-		if c == ' ' || c == '\t' || c == '\r' {
-			i++
-			continue
-		}
-		j := i + 1
-		if c == '_' || c == '$' || c > 127 || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' {
-			for j < len(s) {
-				c := s[j]
-				if c == '_' || c == '$' || c > 127 || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' {
-					j++
-				} else {
-					break
-				}
-			}
-		}
-		out = append(out, javaToken{s[i:j], i, j, line})
-		i = j
-	}
-	return out
+	value, _ := javaTokensContext(context.Background(), s)
+	return value
 }
 func matching(tokens []javaToken, start int, open, close string) int {
-	depth := 0
-	for i := start; i < len(tokens); i++ {
-		if tokens[i].text == open {
-			depth++
-		}
-		if tokens[i].text == close {
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
+	return matchingWithContext(context.Background(), tokens, start, open, close)
 }
 func javaIdentifier(v string) bool {
 	if v == "" {
@@ -154,44 +43,12 @@ func javaIdentifier(v string) bool {
 	return unicode.IsLetter(r) || r == '_' || r == '$'
 }
 func declarationStart(tokens []javaToken, i int) int {
-	for i > 0 {
-		p := tokens[i-1].text
-		if p == ";" || p == "{" || p == "}" {
-			break
-		}
-		i--
-	}
-	return i
+	return declarationStartWithContext(context.Background(), tokens, i)
 }
-
 func declarationTokens(tokens []javaToken) []javaToken {
-	declarations := make([]javaToken, 0, len(tokens))
-	for index := 0; index < len(tokens); index++ {
-		token := tokens[index]
-		if token.text != "@" || index+1 >= len(tokens) || tokens[index+1].text == "interface" || !javaIdentifier(tokens[index+1].text) {
-			declarations = append(declarations, token)
-			continue
-		}
-		end := index + 2
-		for end+1 < len(tokens) && tokens[end].text == "." && javaIdentifier(tokens[end+1].text) {
-			end += 2
-		}
-		if end < len(tokens) && tokens[end].text == "(" {
-			closing := matching(tokens, end, "(", ")")
-			if closing < 0 {
-				declarations = append(declarations, token)
-				continue
-			}
-			end = closing + 1
-		}
-		// Keep the source span so declaration slices retain annotations without reading their arguments as members.
-		token.text, token.end = "", tokens[end-1].end
-		declarations = append(declarations, token)
-		index = end - 1
-	}
-	return declarations
+	value, _ := declarationTokensContext(context.Background(), tokens)
+	return value
 }
-
 func sourceSlice(s SourceSnapshot, first, last int, complete bool) CodeSlice {
 	ls := lines(s.Content)
 	first = max(first, 1)
@@ -199,248 +56,27 @@ func sourceSlice(s SourceSnapshot, first, last int, complete bool) CodeSlice {
 	return CodeSlice{s.Path, s.Revision, first, last, strings.Join(ls[first-1:last], "\n"), first, last, complete}
 }
 func readJava(s SourceSnapshot) ([]javaSymbol, []javaUnit, []string) {
-	content := strings.ReplaceAll(s.Content, "\r\n", "\n")
-	masked := sanitizeJava(content)
-	tokens := declarationTokens(javaTokens(masked))
-	symbols := []javaSymbol{}
-	units := []javaUnit{}
-	limitations := []string{}
-	if strings.Contains(content, `\u`) {
-		return symbols, units, []string{s.Path + ": Java Unicode escapes prevent safe declaration analysis."}
-	}
-	kinds := map[string]int{"class": 0, "interface": 1, "record": 2, "enum": 3}
-	for i, t := range tokens {
-		kind, ok := kinds[t.text]
-		if !ok || i+1 >= len(tokens) || !javaIdentifier(tokens[i+1].text) || i > 0 && tokens[i-1].text == "." {
-			continue
-		}
-		opening := -1
-		for j := i + 2; j < len(tokens); j++ {
-			if tokens[j].text == ";" {
-				break
-			}
-			if tokens[j].text == "(" {
-				end := matching(tokens, j, "(", ")")
-				if end < 0 {
-					break
-				}
-				j = end
-				continue
-			}
-			if tokens[j].text == "{" {
-				opening = j
-				break
-			}
-		}
-		if opening < 0 {
-			continue
-		}
-		end := matching(tokens, opening, "{", "}")
-		if end < 0 {
-			limitations = append(limitations, s.Path+": incomplete Java type body.")
-			continue
-		}
-		start := declarationStart(tokens, i)
-		name := tokens[i+1].text
-		signature := strings.Join(strings.Fields(content[tokens[start].start:tokens[opening].start]), " ")
-		node := GraphNode{Path: s.Path, Name: name, Signature: signature, Kind: kind, Revision: s.Revision, StartLine: tokens[start].line, EndLine: tokens[end].line}
-		symbols = append(symbols, javaSymbol{node: node, key: "type:" + name, content: sourceSlice(s, node.StartLine, node.EndLine, true).Content, startToken: start, openToken: opening, endToken: end})
-	}
-	// Limit candidates to direct type members so expressions cannot become methods.
-	types := append([]javaSymbol{}, symbols...)
-	for _, owner := range types {
-		depth := 0
-		for i := owner.openToken + 1; i < owner.endToken; i++ {
-			if tokens[i].text == "{" {
-				depth++
-				continue
-			}
-			if tokens[i].text == "}" {
-				depth--
-				continue
-			}
-			if depth != 0 || tokens[i].text != "(" || i == 0 || !javaIdentifier(tokens[i-1].text) {
-				continue
-			}
-			name := tokens[i-1].text
-			if slices.Contains([]string{"if", "for", "while", "switch", "catch", "synchronized", "new", "try", "this", "super"}, name) {
-				continue
-			}
-			close := matching(tokens, i, "(", ")")
-			if close < 0 {
-				continue
-			}
-			next := close + 1
-			if next < len(tokens) && tokens[next].text == "throws" {
-				for next < len(tokens) && tokens[next].text != "{" && tokens[next].text != ";" {
-					next++
-				}
-			}
-			if next >= len(tokens) || (tokens[next].text != "{" && tokens[next].text != ";") {
-				i = close
-				continue
-			}
-			start := declarationStart(tokens, i-1)
-			prefix := tokens[start : i-1]
-			bad := false
-			for _, p := range prefix {
-				if p.text == "=" || p.text == "new" || p.text == "return" {
-					bad = true
-				}
-			}
-			if i >= 2 && tokens[i-2].text == "." {
-				bad = true
-			}
-			if (len(prefix) == 0 && name != owner.node.Name) || bad {
-				continue
-			}
-			end := next
-			if tokens[next].text == "{" {
-				end = matching(tokens, next, "{", "}")
-				if end < 0 {
-					limitations = append(limitations, s.Path+": incomplete Java method body.")
-					continue
-				}
-			}
-			parameters := 0
-			paramTypes := []string{}
-			if close > i+1 {
-				parameters = 1
-				level := 0
-				segment := i + 1
-				for j := i + 1; j <= close; j++ {
-					v := tokens[j].text
-					if v == "<" || v == "(" || v == "[" {
-						level++
-					}
-					if v == ">" || v == ")" || v == "]" {
-						level--
-					}
-					if j == close || v == "," && level == 0 {
-						part := tokens[segment:j]
-						if len(part) > 0 {
-							typeParts := []string{}
-							for _, p := range part[:max(0, len(part)-1)] {
-								if p.text != "final" {
-									typeParts = append(typeParts, p.text)
-								}
-							}
-							paramTypes = append(paramTypes, strings.Join(typeParts, ""))
-						}
-						if j != close {
-							parameters++
-						}
-						segment = j + 1
-					}
-				}
-			}
-			signature := strings.Join(strings.Fields(content[tokens[start].start:tokens[next].start]), " ")
-			ownerName := owner.node.Name
-			node := GraphNode{Path: s.Path, DeclaringType: &ownerName, Name: name, Signature: signature, Kind: 4, Revision: s.Revision, StartLine: tokens[start].line, EndLine: tokens[end].line}
-			symbols = append(symbols, javaSymbol{node: node, key: "method:" + ownerName + ":" + name + "(" + strings.Join(paramTypes, ",") + ")", content: sourceSlice(s, node.StartLine, node.EndLine, true).Content, startToken: start, openToken: next, endToken: end, parameters: parameters})
-			i = end
-		}
-	}
-	for i := range symbols {
-		sym := &symbols[i]
-		if sym.node.Kind != 4 {
-			parent := ""
-			for _, t := range types {
-				if t.node.StartLine < sym.node.StartLine && t.node.EndLine >= sym.node.EndLine {
-					if parent == "" || len(t.node.Name) > len(parent) {
-						parent = t.node.Name
-					}
-				}
-			}
-			if parent != "" {
-				sym.node.DeclaringType = &parent
-				sym.key = parent + ":" + sym.key
-			}
-		}
-		sym.node.SourceSymbolID = Hash(fmt.Sprintf("%d|%s|%s|%d", s.Revision, s.Path, sym.key, sym.node.StartLine))
-	}
-	for i, sym := range symbols {
-		if sym.node.Kind == 4 {
-			units = append(units, javaUnit{sym.key, "method", sourceSlice(s, sym.node.StartLine, sym.node.EndLine, true), i})
-			continue
-		}
-		units = append(units, javaUnit{sym.key + ":header", "type-header", sourceSlice(s, sym.node.StartLine, tokens[sym.openToken].line, true), i})
-		if tokens[sym.endToken].line > tokens[sym.openToken].line {
-			units = append(units, javaUnit{sym.key + ":footer", "type-footer", sourceSlice(s, tokens[sym.endToken].line, tokens[sym.endToken].line, true), i})
-		}
-		segment := sym.openToken + 1
-		for j := segment; j < sym.endToken; j++ {
-			childEnd := -1
-			for _, child := range symbols {
-				if child.startToken == j && child.startToken > sym.openToken && child.endToken < sym.endToken {
-					childEnd = child.endToken
-					break
-				}
-			}
-			if childEnd >= 0 {
-				j = childEnd
-				segment = j + 1
-				continue
-			}
-			if tokens[j].text == "{" {
-				end := matching(tokens, j, "{", "}")
-				if end < 0 {
-					break
-				}
-				j = end
-			}
-			if tokens[j].text != ";" && tokens[j].text != "}" {
-				continue
-			}
-			if segment <= j {
-				kind := "field"
-				name := ""
-				for k := segment; k <= j; k++ {
-					if tokens[k].text == "=" {
-						break
-					}
-					if javaIdentifier(tokens[k].text) {
-						name = tokens[k].text
-					}
-				}
-				if tokens[j].text == "}" {
-					kind = "declaration"
-				}
-				key := sym.key + ":" + kind + ":" + name
-				units = append(units, javaUnit{key, kind, sourceSlice(s, tokens[segment].line, tokens[j].line, true), i})
-			}
-			segment = j + 1
-		}
-	}
-	importPattern := regexp.MustCompile(`(?m)^\s*(?:package|import)\s+[^;]+;`)
-	imports := importPattern.FindAllStringIndex(masked, -1)
-	if len(imports) > 0 {
-		first, last := imports[0][0], imports[len(imports)-1][1]
-		for first < len(masked) && unicode.IsSpace(rune(masked[first])) {
-			first++
-		}
-		units = append(units, javaUnit{"imports", "imports", sourceSlice(s, strings.Count(masked[:first], "\n")+1, strings.Count(masked[:last], "\n")+1, true), -1})
-	}
-	slices.SortStableFunc(units, func(a, b javaUnit) int {
-		if a.source.StartLine != b.source.StartLine {
-			return a.source.StartLine - b.source.StartLine
-		}
-		return b.source.EndLine - a.source.EndLine
-	})
-	merged := []javaUnit{}
-	for _, u := range units {
-		if len(merged) > 0 && u.source.StartLine <= merged[len(merged)-1].source.EndLine {
-			last := &merged[len(merged)-1]
-			last.kind = "declaration"
-			last.source = sourceSlice(s, last.source.StartLine, max(last.source.EndLine, u.source.EndLine), true)
-		} else {
-			merged = append(merged, u)
-		}
-	}
-	return symbols, merged, limitations
+	return readJavaWithUnicodePolicy(s, false)
+}
+
+func readJavaWithUnicodePolicy(s SourceSnapshot, allowInertEscapes bool) ([]javaSymbol, []javaUnit, []string) {
+	symbols, units, limits, _ := readJavaWithUnicodePolicyContext(context.Background(), s, allowInertEscapes)
+	return symbols, units, limits
 }
 func Analyze(snapshot Snapshot) (Document, error) {
-	d := Document{Version: 3, ManifestSha256: snapshot.ManifestSha256, BaseSha: snapshot.BaseSha, StartSha: snapshot.StartSha, HeadSha: snapshot.HeadSha, Blocks: []Block{}, Graph: Graph{Nodes: []GraphNode{}, Edges: []GraphEdge{}, Limitations: []string{}}, Coverage: Coverage{IsComplete: snapshot.IsComplete, Exceptions: []string{}, ContextLines: []ChangeDisposition{}, ExcludedLines: []ChangeDisposition{}}, Limitations: append([]string{}, snapshot.Limitations...), DependencyContext: []CodeSlice{}, SelectionVersion: 1, DeclarationContext: []CodeSlice{}}
+	return AnalyzeContext(context.Background(), snapshot)
+}
+func AnalyzeContext(ctx context.Context, snapshot Snapshot) (Document, error) {
+	return analyzeWithSelectionContext(ctx, snapshot, CurrentSelectionVersion)
+}
+func analyzeWithSelection(snapshot Snapshot, selectionVersion int) (Document, error) {
+	return analyzeWithSelectionContext(context.Background(), snapshot, selectionVersion)
+}
+func analyzeWithSelectionContext(ctx context.Context, snapshot Snapshot, selectionVersion int) (Document, error) {
+	if err := ctx.Err(); err != nil {
+		return Document{}, err
+	}
+	d := Document{Version: 3, ManifestSha256: snapshot.ManifestSha256, BaseSha: snapshot.BaseSha, StartSha: snapshot.StartSha, HeadSha: snapshot.HeadSha, Blocks: []Block{}, Graph: Graph{Nodes: []GraphNode{}, Edges: []GraphEdge{}, Limitations: []string{}}, Coverage: Coverage{IsComplete: snapshot.IsComplete, Exceptions: []string{}, ContextLines: []ChangeDisposition{}, ExcludedLines: []ChangeDisposition{}}, Limitations: append([]string{}, snapshot.Limitations...), DependencyContext: []CodeSlice{}, SelectionVersion: selectionVersion, DeclarationContext: []CodeSlice{}}
 	type fileAnalysis struct {
 		file    FileSnapshot
 		symbols []javaSymbol
@@ -451,14 +87,49 @@ func Analyze(snapshot Snapshot) (Document, error) {
 	analyses := []fileAnalysis{}
 	allSymbols := []javaSymbol{}
 	for _, f := range files {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
 		analysis := fileAnalysis{file: f}
 		for _, source := range []*SourceSnapshot{f.Base, f.Head} {
-			if source == nil || !strings.HasSuffix(strings.ToLower(source.Path), ".java") {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
+			if source == nil {
 				continue
 			}
-			syms, units, limits := readJava(*source)
+			if !strings.HasSuffix(strings.ToLower(source.Path), ".java") {
+				if selectionVersion >= 2 {
+					symbols, err := readLanguageNeutralFunctionsContext(ctx, *source)
+					if err != nil {
+						return Document{}, err
+					}
+					analysis.symbols = append(analysis.symbols, symbols...)
+					d.Graph.Limitations = append(d.Graph.Limitations, source.Path+": semantic Java resolution is unavailable; symbol ranges use the language-neutral fallback.")
+				}
+				continue
+			}
+			var syms []javaSymbol
+			var units []javaUnit
+			var limits []string
+			if selectionVersion >= 2 {
+				var err error
+				syms, units, limits, err = readMRJavaContext(ctx, *source)
+				if err != nil {
+					return Document{}, err
+				}
+			} else {
+				var err error
+				syms, units, limits, err = readJavaWithUnicodePolicyContext(ctx, *source, false)
+				if err != nil {
+					return Document{}, err
+				}
+			}
 			offset := len(analysis.symbols)
 			for i := range units {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				if units[i].symbol >= 0 {
 					units[i].symbol += offset
 				}
@@ -469,6 +140,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		}
 		baseKeys, headKeys := map[string][]int{}, map[string][]int{}
 		for i, s := range analysis.symbols {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			if s.node.Revision == Base {
 				baseKeys[s.key] = append(baseKeys[s.key], i)
 			} else {
@@ -476,6 +150,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 		}
 		for key, before := range baseKeys {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			after := headKeys[key]
 			if len(before) == 1 && len(after) == 1 {
 				a, z := before[0], after[0]
@@ -491,12 +168,18 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 		}
 		for i, before := range analysis.symbols {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			if before.node.Kind != 4 || before.node.Revision != Base || before.node.CounterpartID != nil {
 				continue
 			}
 			candidates := []int{}
 			beforeCount := 0
 			for j, current := range analysis.symbols {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				sameOwner := canonicalJSON(current.node.DeclaringType) == canonicalJSON(before.node.DeclaringType)
 				if current.node.Kind == 4 && current.node.Name == before.node.Name && sameOwner && current.node.CounterpartID == nil {
 					if current.node.Revision == Head {
@@ -516,7 +199,14 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 		}
 		for i := range analysis.symbols {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			s := &analysis.symbols[i]
+			if selectionVersion >= 2 && f.Operation == "context" {
+				s.node.Change = 0
+				continue
+			}
 			if s.node.CounterpartID == nil {
 				s.node.CounterpartAbsent = true
 				if s.node.Revision == Base {
@@ -527,7 +217,20 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 		}
 		for i := range analysis.units {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			u := &analysis.units[i]
+			if selectionVersion >= 2 && u.symbol >= 0 {
+				symbol := analysis.symbols[u.symbol]
+				suffix := strings.TrimPrefix(u.key, symbol.node.SourceSymbolID)
+				u.key = symbol.node.SourceSymbolID
+				if symbol.node.CounterpartID != nil && ordinalCompare(*symbol.node.CounterpartID, u.key) < 0 {
+					u.key = *symbol.node.CounterpartID
+				}
+				u.key += suffix
+				continue
+			}
 			if u.kind == "method" && u.symbol >= 0 {
 				sym := analysis.symbols[u.symbol]
 				if sym.node.CounterpartID != nil {
@@ -558,9 +261,18 @@ func Analyze(snapshot Snapshot) (Document, error) {
 	})
 	graphIDs := map[string]string{}
 	for i, s := range allSymbols {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
 		graphIDs[s.node.SourceSymbolID] = fmt.Sprintf("n%d", i+1)
+		if selectionVersion >= 2 {
+			graphIDs[s.node.SourceSymbolID] = s.node.SourceSymbolID
+		}
 	}
 	for _, s := range allSymbols {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
 		n := s.node
 		n.ID = graphIDs[n.SourceSymbolID]
 		if n.CounterpartID != nil {
@@ -576,16 +288,16 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		}
 		d.Graph.Edges = append(d.Graph.Edges, e)
 	}
+	parents, _, err := graphParentsContext(ctx, d.Graph.Nodes)
+	if err != nil {
+		return Document{}, err
+	}
 	for _, n := range d.Graph.Nodes {
-		var parent *GraphNode
-		for _, p := range d.Graph.Nodes {
-			if p.ID != n.ID && p.Kind != 4 && p.Path == n.Path && p.Revision == n.Revision && p.StartLine <= n.StartLine && p.EndLine >= n.EndLine && (parent == nil || p.EndLine-p.StartLine < parent.EndLine-parent.StartLine) {
-				copy := p
-				parent = &copy
-			}
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
 		}
-		if parent != nil {
-			addEdge(GraphEdge{Kind: "contains", SourceID: parent.ID, TargetIDs: []string{n.ID}, Revision: n.Revision, Change: "structural"})
+		if parent, found := parents[n.ID]; found {
+			addEdge(GraphEdge{Kind: "contains", SourceID: parent, TargetIDs: []string{n.ID}, Revision: n.Revision, Change: "structural"})
 		}
 		if n.Revision == Base && n.CounterpartID != nil {
 			addEdge(GraphEdge{Kind: "counterpart", SourceID: n.ID, TargetIDs: []string{*n.CounterpartID}, Revision: Base, Change: "matched-declaration"})
@@ -595,36 +307,83 @@ func Analyze(snapshot Snapshot) (Document, error) {
 	parameters := map[string]int{}
 	fileVariables := map[string]map[string]string{}
 	for _, s := range allSymbols {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
 		if s.node.Kind == 4 {
 			parameters[graphIDs[s.node.SourceSymbolID]] = s.parameters
 		}
 	}
 	for _, a := range analyses {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
+		if selectionVersion >= 2 {
+			break
+		}
 		for _, source := range []*SourceSnapshot{a.file.Base, a.file.Head} {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			if source != nil {
 				types := variableTypes(source.Content)
 				fileVariables[fmt.Sprintf("%d|%s", source.Revision, source.Path)] = types
 				conflicts := []string{}
 				for name, typ := range types {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
 					if typ == "" {
 						conflicts = append(conflicts, name)
 					}
 				}
 				slices.SortFunc(conflicts, ordinalCompare)
 				for _, name := range conflicts {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
 					d.Graph.Limitations = append(d.Graph.Limitations, fmt.Sprintf("%s: receiver variable %q has conflicting declaration types across scopes; calls through that name remain unresolved.", source.Path, name))
 				}
 			}
 		}
 	}
+	var resolver *mrCallResolver
+	if selectionVersion >= 2 {
+		var err error
+		resolver, err = newMRCallResolverContext(ctx, allSymbols, files, graphIDs)
+		if err != nil {
+			return Document{}, err
+		}
+	}
+	seenCalls := map[string]bool{}
 	for _, s := range allSymbols {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
 		if s.node.Kind != 4 {
 			continue
 		}
-		masked := sanitizeJava(s.content)
+		bodyOffset := 0
+		if selectionVersion >= 2 {
+			opening := javaBodyOpening(s.content)
+			if opening < 0 {
+				continue
+			}
+			bodyOffset = opening + 1
+		}
+		masked, err := sanitizeJavaContext(ctx, s.content[bodyOffset:])
+		if err != nil {
+			return Document{}, err
+		}
+		methodVariables := variableTypes(s.content)
+		line, previousOffset := s.node.StartLine+strings.Count(s.content[:bodyOffset], "\n"), 0
 		for _, m := range callsPattern.FindAllStringSubmatchIndex(masked, -1) {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			name := masked[m[4]:m[5]]
-			line := s.node.StartLine + strings.Count(masked[:m[0]], "\n")
+			line += strings.Count(masked[previousOffset:m[0]], "\n")
+			previousOffset = m[0]
 			if slices.Contains([]string{"if", "for", "while", "switch", "catch", "synchronized", "try", "this", "super"}, name) || line == s.node.StartLine && name == s.node.Name {
 				continue
 			}
@@ -640,7 +399,7 @@ func Analyze(snapshot Snapshot) (Document, error) {
 				}
 			} else {
 				fileType, fileKnown := fileVariables[fmt.Sprintf("%d|%s", s.node.Revision, s.node.Path)][receiver]
-				methodType, methodKnown := variableTypes(s.content)[receiver]
+				methodType, methodKnown := methodVariables[receiver]
 				if fileKnown && fileType == "" || methodKnown && methodType == "" {
 					unknownReceiver = true
 					receiverType = ""
@@ -650,9 +409,15 @@ func Analyze(snapshot Snapshot) (Document, error) {
 					receiverType = fileType
 				}
 			}
-			arity := invocationArity(s.content, m[1]-1)
+			arity := invocationArity(s.content, bodyOffset+m[1]-1)
 			targets := []string{}
 			for _, target := range d.Graph.Nodes {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
+				if selectionVersion >= 2 {
+					break
+				}
 				if unknownReceiver {
 					continue
 				}
@@ -691,38 +456,27 @@ func Analyze(snapshot Snapshot) (Document, error) {
 				r := receiverType
 				receiverPtr = &r
 			}
-			addEdge(GraphEdge{Kind: "call", SourceID: graphIDs[s.node.SourceSymbolID], TargetIDs: targets, Revision: s.node.Revision, Line: &line, InvokedName: &nameCopy, ReceiverType: receiverPtr, Resolution: resolution, Change: change})
+			if resolver != nil {
+				targets, receiverPtr, resolution = resolver.resolve(s, name, receiver, arity)
+				key := canonicalJSON([]any{s.node.SourceSymbolID, name, receiver, line, targets})
+				if seenCalls[key] {
+					continue
+				}
+				seenCalls[key] = true
+			}
+			callLine := line
+			addEdge(GraphEdge{Kind: "call", SourceID: graphIDs[s.node.SourceSymbolID], TargetIDs: targets, Revision: s.node.Revision, Line: &callLine, InvokedName: &nameCopy, ReceiverType: receiverPtr, Resolution: resolution, Change: change})
 		}
 	}
-	byGraphID := map[string]GraphNode{}
-	for _, n := range d.Graph.Nodes {
-		byGraphID[n.ID] = n
+	if _, err := markUnchangedCallsContext(ctx, &d.Graph); err != nil {
+		return Document{}, err
 	}
-	for i, e := range d.Graph.Edges {
-		if e.Kind != "call" {
-			continue
-		}
-		n := byGraphID[e.SourceID]
-		if n.CounterpartID == nil {
-			continue
-		}
-		targets := []string{}
-		for _, id := range e.TargetIDs {
-			target := byGraphID[id]
-			if target.CounterpartID == nil {
-				targets = append(targets, "?")
-			} else {
-				targets = append(targets, *target.CounterpartID)
-			}
-		}
-		slices.SortFunc(targets, ordinalCompare)
-		for _, other := range d.Graph.Edges {
-			otherTargets := append([]string{}, other.TargetIDs...)
-			slices.SortFunc(otherTargets, ordinalCompare)
-			if other.Kind == "call" && other.SourceID == *n.CounterpartID && canonicalJSON(e.InvokedName) == canonicalJSON(other.InvokedName) && canonicalJSON(e.ReceiverType) == canonicalJSON(other.ReceiverType) && e.Resolution == other.Resolution && slices.Equal(targets, otherTargets) {
-				d.Graph.Edges[i].Change = "unchanged"
-				break
-			}
+	relevantBodies := map[string]bool{}
+	if selectionVersion >= 2 {
+		var err error
+		d.Graph, graphIDs, relevantBodies, err = selectMRGraphContext(ctx, d.Graph, allSymbols)
+		if err != nil {
+			return Document{}, err
 		}
 	}
 	d.Graph.Limitations = unique(append(d.Graph.Limitations, "Java call resolution is lexical and limited to visible declarations. Reflection, inheritance, overload types and runtime dispatch are not proven."))
@@ -746,10 +500,26 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		d.Blocks = append(d.Blocks, Block{ID: id, OriginalBlockID: id, FilePath: f.NewPath, Kind: kind, SymbolIDs: ids, Base: before, Head: after, BaseExists: baseExists, HeadExists: headExists, PartIndex: 1, PartCount: 1, ChangedLines: changed, Limitations: limits, StructuralContext: []CodeSlice{}})
 	}
 	for _, a := range analyses {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
 		f := a.file
 		for _, sym := range a.symbols {
-			if sym.node.Kind == 4 {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
+			if sym.node.Kind == 4 && (selectionVersion < 2 || relevantBodies[sym.node.SourceSymbolID]) {
 				d.DependencyContext = append(d.DependencyContext, CodeSlice{Path: sym.node.Path, Revision: sym.node.Revision, StartLine: sym.node.StartLine, EndLine: sym.node.EndLine, Content: sym.content, SymbolStartLine: sym.node.StartLine, SymbolEndLine: sym.node.EndLine, IsComplete: true})
+			}
+		}
+		if selectionVersion >= 2 {
+			for _, unit := range a.units {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
+				if unit.kind == "imports" || unit.kind == "type-header" {
+					d.DeclarationContext = append(d.DeclarationContext, unit.source)
+				}
 			}
 		}
 		if f.Operation == "context" {
@@ -768,6 +538,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		java := strings.HasSuffix(strings.ToLower(f.NewPath), ".java")
 		if java && f.Base != nil && f.Head != nil && strings.TrimRight(strings.ReplaceAll(f.Base.Content, "\r\n", "\n"), "\n") == strings.TrimRight(strings.ReplaceAll(f.Head.Content, "\r\n", "\n"), "\n") {
 			for _, ch := range changes {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				d.Coverage.ExcludedLines = append(d.Coverage.ExcludedLines, ChangeDisposition{f.NewPath, ch.Revision, ch.Line, "Only line endings or the final newline changed in Java source."})
 			}
 			continue
@@ -782,6 +555,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		if !java || len(a.units) == 0 {
 			if !java && max(sourceLineCount(f.Base), sourceLineCount(f.Head)) > 200 && len(f.Hunks) > 0 {
 				for _, h := range f.Hunks {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
 					region := func(s *SourceSnapshot, start, count int) *CodeSlice {
 						if s == nil || start < 1 || count == 0 {
 							return nil
@@ -792,6 +568,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 					before, after := region(f.Base, h.OldStart, h.OldCount), region(f.Head, h.NewStart, h.NewCount)
 					owned := []ChangedLine{}
 					for _, ch := range changes {
+						if err := ctx.Err(); err != nil {
+							return Document{}, err
+						}
 						if within(ch, before, after) {
 							owned = append(owned, ch)
 						}
@@ -810,13 +589,16 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		grouped := map[string][]javaUnit{}
 		shared := []CodeSlice{}
 		for _, u := range a.units {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			if _, ok := grouped[u.key]; !ok {
 				unitKeys = append(unitKeys, u.key)
 			}
 			grouped[u.key] = append(grouped[u.key], u)
 			if u.kind == "imports" || u.kind == "type-header" || u.kind == "type-footer" {
 				shared = append(shared, u.source)
-				if u.kind != "type-footer" {
+				if u.kind != "type-footer" && selectionVersion < 2 {
 					d.DeclarationContext = append(d.DeclarationContext, u.source)
 				}
 			}
@@ -824,11 +606,17 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		owned := map[ChangedLine]bool{}
 		contextChanges := []ChangedLine{}
 		for _, key := range unitKeys {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			units := grouped[key]
 			var before, after *CodeSlice
 			ids := []string{}
 			ambiguous := false
 			for _, u := range units {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				copy := u.source
 				if copy.Revision == Base {
 					if before != nil {
@@ -842,7 +630,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 					after = &copy
 				}
 				if u.symbol >= 0 {
-					ids = append(ids, graphIDs[a.symbols[u.symbol].node.SourceSymbolID])
+					if id, found := graphIDs[a.symbols[u.symbol].node.SourceSymbolID]; found {
+						ids = append(ids, id)
+					}
 				}
 			}
 			if ambiguous {
@@ -851,6 +641,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 			changed := []ChangedLine{}
 			for _, ch := range changes {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				if within(ch, before, after) {
 					changed = append(changed, ch)
 				}
@@ -865,12 +658,18 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 			addBlock(f, kind, before, after, unique(ids), changed, nil)
 			for _, ch := range changed {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				owned[ch] = true
 			}
 		}
 		if len(d.Blocks) == firstBlock && len(contextChanges) > 0 {
 			var before, after *CodeSlice
 			for _, u := range a.units {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				if u.kind == "imports" {
 					copy := u.source
 					if u.source.Revision == Base {
@@ -882,6 +681,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 			importChanges := []ChangedLine{}
 			for _, ch := range contextChanges {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				if within(ch, before, after) {
 					importChanges = append(importChanges, ch)
 				}
@@ -889,28 +691,43 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			if len(importChanges) > 0 {
 				addBlock(f, "imports", before, after, nil, importChanges, []string{"Only imports or package declarations changed; name resolution effects are not established by import text alone."})
 				for _, ch := range importChanges {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
 					owned[ch] = true
 				}
 			} else {
 				addBlock(f, "type-boundary", full(f.Base), full(f.Head), nil, contextChanges, []string{"A changed type boundary requires the complete source for interpretation."})
 				for _, ch := range contextChanges {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
 					owned[ch] = true
 				}
 			}
 		}
 		for _, ch := range contextChanges {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			if !owned[ch] {
 				d.Coverage.ContextLines = append(d.Coverage.ContextLines, ChangeDisposition{f.NewPath, ch.Revision, ch.Line, "Included as structural context, not a separate review block."})
 				owned[ch] = true
 			}
 		}
 		for _, rev := range []Revision{Base, Head} {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			remaining := []int{}
 			source := f.Base
 			if rev == Head {
 				source = f.Head
 			}
 			for _, ch := range changes {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				if ch.Revision != rev || owned[ch] {
 					continue
 				}
@@ -926,14 +743,23 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			}
 			slices.Sort(remaining)
 			for len(remaining) > 0 {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				end := 1
 				for end < len(remaining) && remaining[end] == remaining[end-1]+1 {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
 					end++
 				}
 				group := remaining[:end]
 				v := sourceSlice(*source, group[0], group[len(group)-1], false)
 				changed := []ChangedLine{}
 				for _, line := range group {
+					if err := ctx.Err(); err != nil {
+						return Document{}, err
+					}
 					changed = append(changed, ChangedLine{rev, line})
 				}
 				var before, after *CodeSlice
@@ -953,7 +779,13 @@ func Analyze(snapshot Snapshot) (Document, error) {
 			return int(a.Revision - b.Revision)
 		})
 		for i := firstBlock; i < len(d.Blocks); i++ {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			for _, s := range shared {
+				if err := ctx.Err(); err != nil {
+					return Document{}, err
+				}
 				if !sliceContains(d.Blocks[i].Base, s) && !sliceContains(d.Blocks[i].Head, s) {
 					d.Blocks[i].StructuralContext = append(d.Blocks[i].StructuralContext, s)
 				}
@@ -961,8 +793,14 @@ func Analyze(snapshot Snapshot) (Document, error) {
 		}
 	}
 	for _, b := range d.Blocks {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
 		d.Coverage.CoveredChangedLines += len(b.ChangedLines)
 		for _, s := range []*CodeSlice{b.Base, b.Head} {
+			if err := ctx.Err(); err != nil {
+				return Document{}, err
+			}
 			if s != nil {
 				d.Coverage.RequiredSourceLines += s.EndLine - s.StartLine + 1
 			}
@@ -973,6 +811,9 @@ func Analyze(snapshot Snapshot) (Document, error) {
 	}
 	d.Coverage.IsComplete = d.Coverage.IsComplete && len(d.Coverage.Exceptions) == 0
 	d.Limitations = unique(append(append(d.Limitations, d.Graph.Limitations...), d.Coverage.Exceptions...))
+	if err := ctx.Err(); err != nil {
+		return Document{}, err
+	}
 	return d, nil
 }
 func sourceLineCount(s *SourceSnapshot) int {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -73,6 +74,7 @@ type Plan struct {
 	Route           config.Route        `json:"route"`
 	Prepared        review.PreparedPlan `json:"prepared"`
 	DeadlineSeconds int                 `json:"deadlineSeconds"`
+	bundle          *BundleStore
 }
 
 type Attempt struct {
@@ -152,17 +154,24 @@ func WrapSnapshot(snapshot review.Snapshot, task json.RawMessage) Snapshot {
 }
 
 func Build(snapshot Snapshot, route config.Route, prompt string) (Plan, error) {
+	return BuildContext(context.Background(), snapshot, route, prompt)
+}
+
+func BuildContext(ctx context.Context, snapshot Snapshot, route config.Route, prompt string) (Plan, error) {
+	if err := ctx.Err(); err != nil {
+		return Plan{}, err
+	}
 	if snapshot.SchemaVersion != 1 || snapshot.Kind != "ReviewSnapshot" || snapshot.Compatibility != Contract() {
 		return Plan{}, errors.New("unsupported snapshot document")
 	}
-	if err := review.ValidateSnapshot(snapshot.Snapshot); err != nil {
+	if err := review.ValidateSnapshotContext(ctx, snapshot.Snapshot); err != nil {
 		return Plan{}, err
 	}
-	doc, err := review.Analyze(snapshot.Snapshot)
+	doc, err := review.AnalyzeContext(ctx, snapshot.Snapshot)
 	if err != nil {
 		return Plan{}, err
 	}
-	return BuildDocument(doc, route, prompt, snapshot.Task)
+	return BuildDocumentContext(ctx, doc, route, prompt, snapshot.Task)
 }
 
 func options(provider config.ProviderSnapshot, prompt string, task json.RawMessage) review.PlanOptions {
@@ -170,17 +179,34 @@ func options(provider config.ProviderSnapshot, prompt string, task json.RawMessa
 }
 
 func BuildDocument(document review.Document, route config.Route, prompt string, task json.RawMessage) (Plan, error) {
+	return BuildDocumentContext(context.Background(), document, route, prompt, task)
+}
+
+func BuildDocumentContext(ctx context.Context, document review.Document, route config.Route, prompt string, task json.RawMessage) (Plan, error) {
+	if err := ctx.Err(); err != nil {
+		return Plan{}, err
+	}
 	if err := config.ValidateRoute(route); err != nil {
 		return Plan{}, err
 	}
-	prepared, err := review.Plan(document, options(route.Primary, prompt, task))
+	prepared, err := review.PlanContext(ctx, document, options(route.Primary, prompt, task))
 	if err != nil {
+		return Plan{}, err
+	}
+	if err = ctx.Err(); err != nil {
 		return Plan{}, err
 	}
 	return Plan{SchemaVersion: 1, Kind: "ReviewPlan", Producer: Identity(), Compatibility: Contract(), RunID: UUID(), PassID: UUID(), Document: document, Route: route, Prepared: prepared, DeadlineSeconds: 3600}, nil
 }
 
 func (p Plan) Validate() error {
+	return p.ValidateContext(context.Background())
+}
+
+func (p Plan) ValidateContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if p.SchemaVersion != 1 || p.Kind != "ReviewPlan" || p.Compatibility != Contract() || p.Prepared.Version != 3 || p.Prepared.Purpose != review.ArchitectureReview || p.DeadlineSeconds < 1 || p.DeadlineSeconds > 86400 {
 		return errors.New("unsupported review plan")
 	}
@@ -194,10 +220,23 @@ func (p Plan) Validate() error {
 		return errors.New("plan graph identity mismatch")
 	}
 	for _, b := range p.Prepared.Batches {
-		if b.Input.Version != 3 || b.Input.Purpose != review.ArchitectureReview || b.InputSha256 != review.Hash(b.UserPrompt) || b.UserPrompt != review.SerializeInput(b.Input) || b.Input.Graph.Sha256 != p.Prepared.GraphSha256 || b.Input.Batch.GraphSha256 != p.Prepared.GraphSha256 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		serialized, err := review.SerializeInputContext(ctx, b.Input)
+		if err != nil {
+			return err
+		}
+		if b.Input.Version != 3 || b.Input.Purpose != review.ArchitectureReview || b.InputSha256 != review.Hash(b.UserPrompt) || b.UserPrompt != serialized || b.Input.Graph.Sha256 != p.Prepared.GraphSha256 || b.Input.Batch.GraphSha256 != p.Prepared.GraphSha256 {
 			return errors.New("prepared batch identity mismatch")
 		}
-		count := review.CountTokens(b.SystemPrompt, b.UserPrompt, review.ResponseSchema())
+		count, err := review.CountTokensContext(ctx, b.SystemPrompt, b.UserPrompt, review.ResponseSchema())
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if b.Budget.ContextLength != p.Route.Primary.Profile.ContextLength || b.MaximumOutputTokens < 1 || b.MaximumOutputTokens != b.Budget.ReservedOutputTokens || count.TemplatedInputTokens > b.Budget.AvailableUserInputTokens || b.MaximumOutputTokens+count.TemplatedInputTokens+count.SchemaReserveTokens >= b.Budget.ContextLength {
 			return errors.New("prepared batch exceeds its provider budget")
 		}
@@ -208,32 +247,172 @@ func (p Plan) Validate() error {
 		prompt = p.Prepared.Batches[0].SystemPrompt
 		task = p.Prepared.Batches[0].Input.Task
 	}
-	expected, err := review.Plan(p.Document, options(p.Route.Primary, prompt, task))
+	expected, err := review.PlanContext(ctx, p.Document, options(p.Route.Primary, prompt, task))
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		return errors.New("plan source cannot be prepared")
 	}
-	a, _ := json.Marshal(expected)
-	b, _ := json.Marshal(p.Prepared)
-	if !bytes.Equal(a, b) {
+	equal, err := preparedPlansEqualContext(ctx, expected, p.Prepared, canonicalValuesEqualContext)
+	if err != nil {
+		return err
+	}
+	if !equal {
 		return errors.New("prepared plan differs from its source document or provider budget; re-plan the input")
 	}
 	return nil
 }
 
+type canonicalValueComparison func(context.Context, any, any) (bool, error)
+
+type graphCollectionKey struct {
+	nodes                                 *review.GraphNode
+	edges                                 *review.GraphEdge
+	limitations                           *string
+	nodeCount, edgeCount, limitationCount int
+	nodesNil, edgesNil, limitationsNil    bool
+}
+
+func graphCollections(graph review.Graph) graphCollectionKey {
+	key := graphCollectionKey{nodeCount: len(graph.Nodes), edgeCount: len(graph.Edges), limitationCount: len(graph.Limitations), nodesNil: graph.Nodes == nil, edgesNil: graph.Edges == nil, limitationsNil: graph.Limitations == nil}
+	if len(graph.Nodes) > 0 {
+		key.nodes = &graph.Nodes[0]
+	}
+	if len(graph.Edges) > 0 {
+		key.edges = &graph.Edges[0]
+	}
+	if len(graph.Limitations) > 0 {
+		key.limitations = &graph.Limitations[0]
+	}
+	return key
+}
+
+func preparedPlansEqualContext(ctx context.Context, expected, actual review.PreparedPlan, compare canonicalValueComparison) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if len(expected.Batches) != len(actual.Batches) || (expected.Batches == nil) != (actual.Batches == nil) {
+		return false, nil
+	}
+	a, b := expected, actual
+	a.Batches, b.Batches = nil, nil
+	if equal, err := compare(ctx, a, b); err != nil || !equal {
+		return equal, err
+	}
+	seen := map[[2]graphCollectionKey]bool{}
+	for index := range expected.Batches {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		left, right := expected.Batches[index], actual.Batches[index]
+		leftGraph, rightGraph := left.Input.Graph, right.Input.Graph
+		leftHeader, rightHeader := leftGraph, rightGraph
+		leftHeader.Nodes, leftHeader.Edges, leftHeader.Limitations = nil, nil, nil
+		rightHeader.Nodes, rightHeader.Edges, rightHeader.Limitations = nil, nil, nil
+		if equal, err := compare(ctx, leftHeader, rightHeader); err != nil || !equal {
+			return equal, err
+		}
+		key := [2]graphCollectionKey{graphCollections(leftGraph), graphCollections(rightGraph)}
+		if !seen[key] {
+			if equal, err := canonicalSlicesEqualContext(ctx, leftGraph.Nodes, rightGraph.Nodes, compare); err != nil || !equal {
+				return equal, err
+			}
+			if equal, err := canonicalSlicesEqualContext(ctx, leftGraph.Edges, rightGraph.Edges, compare); err != nil || !equal {
+				return equal, err
+			}
+			if equal, err := canonicalSlicesEqualContext(ctx, leftGraph.Limitations, rightGraph.Limitations, compare); err != nil || !equal {
+				return equal, err
+			}
+			seen[key] = true
+		}
+		left.Input.Graph, right.Input.Graph = review.Graph{}, review.Graph{}
+		if equal, err := compare(ctx, left, right); err != nil || !equal {
+			return equal, err
+		}
+	}
+	return true, ctx.Err()
+}
+
+func canonicalSlicesEqualContext[T any](ctx context.Context, expected, actual []T, compare canonicalValueComparison) (bool, error) {
+	if len(expected) != len(actual) || (expected == nil) != (actual == nil) {
+		return false, nil
+	}
+	for index := range expected {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		if equal, err := compare(ctx, expected[index], actual[index]); err != nil || !equal {
+			return equal, err
+		}
+	}
+	return true, nil
+}
+
+func canonicalValuesEqualContext(ctx context.Context, expected, actual any) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	a, err := json.Marshal(expected)
+	if cancellation := ctx.Err(); cancellation != nil {
+		return false, cancellation
+	}
+	if err != nil {
+		return false, err
+	}
+	b, err := json.Marshal(actual)
+	if cancellation := ctx.Err(); cancellation != nil {
+		return false, cancellation
+	}
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(a, b), nil
+}
+
 func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (result Result, runErr error) {
-	if err := plan.Validate(); err != nil {
+	if err := plan.ValidateContext(ctx); err != nil {
 		return Result{}, err
 	}
-	encoded, err := json.Marshal(plan)
+	var planHash string
+	var codec runstore.Codec
+	var planBytes []byte
+	var err error
+	if plan.bundle != nil {
+		planHash = plan.bundle.Manifest.PlanHash
+		codec = contextBundleCodec{ctx, plan.bundle}
+		planBytes, err = plan.bundle.PlanBytesContext(ctx)
+	} else {
+		var encoded []byte
+		encoded, err = json.Marshal(plan)
+		planHash = review.Hash(string(encoded))
+	}
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return Result{}, err
+		}
 		return Result{}, errors.New("plan cannot be serialized")
 	}
-	store, err := runstore.Open(directory, review.Hash(string(encoded)))
+	if err = ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	store, err := runstore.OpenWithCodec(directory, planHash, codec)
 	if err != nil {
 		return Result{}, err
 	}
 	defer store.Close()
-	if err = runstore.AtomicJSON(directory+string(os.PathSeparator)+"plan.json", plan); err != nil {
+	if err = ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if plan.bundle != nil {
+		err = runstore.AtomicBytesContext(ctx, filepath.Join(directory, "plan.json"), planBytes)
+	} else {
+		err = runstore.AtomicJSONContext(ctx, directory+string(os.PathSeparator)+"plan.json", plan)
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	if err = ctx.Err(); err != nil {
 		return Result{}, err
 	}
 	s := state{Works: []work{}, Attempts: []Attempt{}, Outputs: []modelOutput{}, StartedAt: time.Now().UTC()}
@@ -241,7 +420,13 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 	if err = store.Read(&s); errors.Is(err, os.ErrNotExist) {
 		newRun = true
 		for _, b := range plan.Prepared.Batches {
+			if err = ctx.Err(); err != nil {
+				return Result{}, err
+			}
 			s.Works = append(s.Works, work{ID: UUID(), Role: "primary", Prepared: b})
+		}
+		if err = ctx.Err(); err != nil {
+			return Result{}, err
 		}
 		if err = store.Write(s); err != nil {
 			return Result{}, err
@@ -249,12 +434,15 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 	} else if err != nil {
 		return Result{}, err
 	}
-	if err = validateSavedResults(plan, s); err != nil {
+	if err = validateSavedResultsContext(ctx, plan, s); err != nil {
 		return Result{}, err
 	}
 	tokens := map[string]string{}
 	pending := false
 	for _, w := range s.Works {
+		if err = ctx.Err(); err != nil {
+			return Result{}, err
+		}
 		if !w.Superseded && w.Result == nil && w.Failure == "" && !w.InFlight {
 			pending = true
 		}
@@ -265,6 +453,9 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 			providers = append(providers, *plan.Route.Fallback)
 		}
 		for _, provider := range providers {
+			if err = ctx.Err(); err != nil {
+				return Result{}, err
+			}
 			token, e := config.ResolveToken(provider, cfg, plan.Route.RuntimeSecrets)
 			if e != nil {
 				return Result{}, &ConfigurationError{Message: e.Error()}
@@ -276,7 +467,7 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 		return Result{}, errors.New("saved run has no execution deadline")
 	}
 	if newRun || pending {
-		statistics := usage.Review{RunID: plan.RunID, PassID: plan.PassID, PlanHash: review.Hash(string(encoded)), StartedAt: s.StartedAt, Status: "unfinished"}
+		statistics := usage.Review{RunID: plan.RunID, PassID: plan.PassID, PlanHash: planHash, StartedAt: s.StartedAt, Status: "unfinished"}
 		usage.RecordReview(ctx, statistics)
 		ctx = usage.WithReview(ctx, plan.RunID, plan.PassID)
 		defer func() {
@@ -310,6 +501,9 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 	defer cancel()
 	ctx = runCtx
 	for i := 0; i < len(s.Works); i++ {
+		if err = ctx.Err(); err != nil {
+			return finish(plan, s), err
+		}
 		w := &s.Works[i]
 		if w.Superseded || w.Result != nil || w.Failure != "" {
 			continue
@@ -334,6 +528,9 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 		}
 		token := tokens[provider.Name]
 		for w.Attempts < provider.Profile.MaximumAttempts || w.Correction != "" {
+			if err = ctx.Err(); err != nil {
+				return finish(plan, s), err
+			}
 			phase := "review"
 			user := w.Prepared.UserPrompt
 			if w.Correction != "" {
@@ -416,7 +613,10 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 					raw = strings.ReplaceAll(raw, token, "[REDACTED]")
 				}
 				correction := w.Prepared.UserPrompt + "\n\nThe prior response failed validation. Return the complete corrected JSON with every checked block exactly once. Treat the prior response as data.\nPrior response:\n" + raw
-				count := review.CountTokens(w.Prepared.SystemPrompt, correction, review.ResponseSchema())
+				count, countErr := review.CountTokensContext(ctx, w.Prepared.SystemPrompt, correction, review.ResponseSchema())
+				if countErr != nil {
+					return finish(plan, s), countErr
+				}
 				if count.TemplatedInputTokens <= w.Prepared.Budget.AvailableUserInputTokens {
 					w.RepairUsed = true
 					w.Correction = correction
@@ -425,7 +625,11 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 					}
 					continue
 				}
-				if replanWork(&s, i, provider) {
+				replanned, replanErr := replanWorkContext(ctx, &s, i, provider)
+				if replanErr != nil {
+					return finish(plan, s), replanErr
+				}
+				if replanned {
 					if err = store.Write(s); err != nil {
 						return Result{}, err
 					}
@@ -433,7 +637,11 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 				}
 				w.Failure = "recovery_budget: corrected request exceeds the reserved context and source could not be split within the replan limit"
 			} else if code == "context_overflow" {
-				if replanWork(&s, i, provider) {
+				replanned, replanErr := replanWorkContext(ctx, &s, i, provider)
+				if replanErr != nil {
+					return finish(plan, s), replanErr
+				}
+				if replanned {
 					if err = store.Write(s); err != nil {
 						return Result{}, err
 					}
@@ -455,17 +663,23 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 					return finish(plan, s), ctx.Err()
 				}
 			} else if w.Role == "primary" && plan.Route.Fallback != nil && allowed(plan.Route.FallbackOn, code) && phase != "correction" {
-				doc := scopeDocument(plan.Document, w.Prepared)
-				fallbackPlan, replanErr := review.Plan(doc, options(*plan.Route.Fallback, w.Prepared.SystemPrompt, w.Prepared.Input.Task))
+				doc, scopeErr := scopeDocumentContext(ctx, plan.Document, w.Prepared)
+				if scopeErr != nil {
+					return finish(plan, s), scopeErr
+				}
+				fallbackPlan, replanErr := review.PlanContext(ctx, doc, options(*plan.Route.Fallback, w.Prepared.SystemPrompt, w.Prepared.Input.Task))
 				if replanErr == nil {
 					for index, child := range fallbackPlan.Batches {
 						child.Input.Batch.IsWholeReview = w.Prepared.Input.Batch.IsWholeReview && len(fallbackPlan.Batches) == 1
-						child, replanErr = review.RefreshPrepared(child)
+						child, replanErr = review.RefreshPreparedContext(ctx, child)
 						if replanErr != nil {
 							break
 						}
 						fallbackPlan.Batches[index] = child
 					}
+				}
+				if errors.Is(replanErr, context.Canceled) || errors.Is(replanErr, context.DeadlineExceeded) {
+					return finish(plan, s), replanErr
 				}
 				if replanErr == nil && len(fallbackPlan.Batches) > 0 {
 					repair, parent, depth := w.RepairUsed, w.ID, w.Prepared.ReplanDepth
@@ -498,17 +712,31 @@ func Run(ctx context.Context, plan Plan, cfg config.Config, directory string) (r
 }
 
 func replanWork(s *state, index int, provider config.ProviderSnapshot) bool {
+	replanned, _ := replanWorkContext(context.Background(), s, index, provider)
+	return replanned
+}
+
+func replanWorkContext(ctx context.Context, s *state, index int, provider config.ProviderSnapshot) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	w := &s.Works[index]
-	children, err := review.SplitBatch(w.Prepared, options(provider, w.Prepared.SystemPrompt, w.Prepared.Input.Task))
+	children, err := review.SplitBatchContext(ctx, w.Prepared, options(provider, w.Prepared.SystemPrompt, w.Prepared.Input.Task))
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false, err
+	}
 	if err != nil || len(children) == 0 {
-		return false
+		return false, nil
+	}
+	if err = ctx.Err(); err != nil {
+		return false, err
 	}
 	role, repair, parent := w.Role, w.RepairUsed, w.ID
 	w.Superseded = true
 	for _, child := range children {
 		s.Works = append(s.Works, work{ID: UUID(), Role: role, Prepared: child, RepairUsed: repair, ParentID: parent})
 	}
-	return true
+	return true, nil
 }
 
 func redactOutput(raw json.RawMessage, tokens map[string]string) json.RawMessage {
@@ -569,12 +797,26 @@ func redactOutput(raw json.RawMessage, tokens map[string]string) json.RawMessage
 }
 
 func scopeDocument(document review.Document, prepared review.PreparedBatch) review.Document {
+	document, _ = scopeDocumentContext(context.Background(), document, prepared)
+	return document
+}
+
+func scopeDocumentContext(ctx context.Context, document review.Document, prepared review.PreparedBatch) (review.Document, error) {
+	if err := ctx.Err(); err != nil {
+		return review.Document{}, err
+	}
 	document.Blocks = prepared.Input.Batch.Blocks
 	document.Graph = prepared.Input.Graph
 	contextLines := []review.ChangeDisposition{}
 	for _, line := range document.Coverage.ContextLines {
+		if err := ctx.Err(); err != nil {
+			return review.Document{}, err
+		}
 		found := false
 		for _, block := range document.Blocks {
+			if err := ctx.Err(); err != nil {
+				return review.Document{}, err
+			}
 			sources := append([]review.CodeSlice{}, block.StructuralContext...)
 			if block.Base != nil {
 				sources = append(sources, *block.Base)
@@ -583,6 +825,9 @@ func scopeDocument(document review.Document, prepared review.PreparedBatch) revi
 				sources = append(sources, *block.Head)
 			}
 			for _, source := range sources {
+				if err := ctx.Err(); err != nil {
+					return review.Document{}, err
+				}
 				path := line.Path
 				if line.Revision == review.Base && block.FilePath == line.Path && block.Base != nil {
 					path = block.Base.Path
@@ -597,19 +842,32 @@ func scopeDocument(document review.Document, prepared review.PreparedBatch) revi
 		}
 	}
 	document.Coverage.ContextLines = contextLines
-	return document
+	return document, nil
 }
 
 func validateSavedResults(plan Plan, s state) error {
+	return validateSavedResultsContext(context.Background(), plan, s)
+}
+
+func validateSavedResultsContext(ctx context.Context, plan Plan, s state) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	roots := 0
 	ids := map[string]bool{}
 	children := map[string][]work{}
 	for _, w := range s.Works {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if w.ParentID != "" {
 			children[w.ParentID] = append(children[w.ParentID], w)
 		}
 	}
 	for _, w := range s.Works {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if ids[w.ID] || w.ID == "" {
 			return errors.New("saved run contains duplicate work identities")
 		}
@@ -630,7 +888,11 @@ func validateSavedResults(plan Plan, s state) error {
 		} else if !ids[w.ParentID] {
 			return errors.New("saved work has an unknown parent")
 		}
-		if w.Prepared.InputSha256 != review.Hash(w.Prepared.UserPrompt) || w.Prepared.UserPrompt != review.SerializeInput(w.Prepared.Input) {
+		serialized, err := review.SerializeInputContext(ctx, w.Prepared.Input)
+		if err != nil {
+			return err
+		}
+		if w.Prepared.InputSha256 != review.Hash(w.Prepared.UserPrompt) || w.Prepared.UserPrompt != serialized {
 			return errors.New("saved work input identity is invalid")
 		}
 		if w.Prepared.ReplanDepth < 0 || w.Prepared.ReplanDepth > 3 {
@@ -641,12 +903,15 @@ func validateSavedResults(plan Plan, s state) error {
 			if len(descendants) == 0 || w.Result != nil {
 				return errors.New("superseded work has no replacement source coverage")
 			}
-			wanted, e := sourceLines(w.Prepared)
+			wanted, e := sourceLinesContext(ctx, w.Prepared)
 			if e != nil {
 				return e
 			}
 			actual := map[string]string{}
 			for _, child := range descendants {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				if w.Role == "fallback" && child.Role != "fallback" || child.Prepared.ReplanDepth < w.Prepared.ReplanDepth {
 					return errors.New("saved work reset provider or replan lineage")
 				}
@@ -656,11 +921,14 @@ func validateSavedResults(plan Plan, s state) error {
 				if w.RepairUsed && !child.RepairUsed {
 					return errors.New("replacement work reset the correction limit")
 				}
-				lines, e := sourceLines(child.Prepared)
+				lines, e := sourceLinesContext(ctx, child.Prepared)
 				if e != nil {
 					return e
 				}
 				for key, value := range lines {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
 					if _, ok := actual[key]; ok {
 						return errors.New("replacement source has duplicate line ownership")
 					}
@@ -671,6 +939,9 @@ func validateSavedResults(plan Plan, s state) error {
 				return errors.New("replacement source coverage is incomplete")
 			}
 			for key, value := range wanted {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				if actual[key] != value {
 					return errors.New("replacement source content differs from its parent")
 				}
@@ -682,6 +953,9 @@ func validateSavedResults(plan Plan, s state) error {
 			var raw string
 			found := false
 			for _, output := range s.Outputs {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				if output.WorkID == w.ID && output.Attempt == w.Attempts {
 					raw = output.Output
 					found = true
@@ -691,6 +965,9 @@ func validateSavedResults(plan Plan, s state) error {
 				return errors.New("saved result has no model output")
 			}
 			validated, e := review.Validate(w.Prepared, json.RawMessage(raw), review.Identity{RunID: plan.RunID, PassID: plan.PassID, ClusterID: w.ID, PolicyVersion: 2})
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if e != nil {
 				return errors.New("saved model output is no longer valid")
 			}
@@ -708,9 +985,22 @@ func validateSavedResults(plan Plan, s state) error {
 }
 
 func sourceLines(prepared review.PreparedBatch) (map[string]string, error) {
+	return sourceLinesContext(context.Background(), prepared)
+}
+
+func sourceLinesContext(ctx context.Context, prepared review.PreparedBatch) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result := map[string]string{}
 	for _, block := range prepared.Input.Batch.Blocks {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		for _, source := range []*review.CodeSlice{block.Base, block.Head} {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if source == nil {
 				continue
 			}
@@ -720,6 +1010,9 @@ func sourceLines(prepared review.PreparedBatch) (map[string]string, error) {
 				return nil, errors.New("saved source slice has invalid line geometry")
 			}
 			for index := 0; index < count; index++ {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				key := fmt.Sprintf("%s\x00%d\x00%d", source.Path, source.Revision, source.StartLine+index)
 				value := review.Hash(lines[index])
 				if _, ok := result[key]; ok {
@@ -729,6 +1022,9 @@ func sourceLines(prepared review.PreparedBatch) (map[string]string, error) {
 			}
 		}
 		for _, line := range block.ChangedLines {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			source := block.Base
 			if line.Revision == review.Head {
 				source = block.Head

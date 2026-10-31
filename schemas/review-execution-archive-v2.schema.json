@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempts": {
+      "items": {},
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "baseSha": {
+      "type": "string"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "baselineCommit": {
+          "type": "string"
+        },
+        "protocolSha256": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "responseSchemaSha256": {
+          "type": "string"
+        },
+        "validationPolicyVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "baselineCommit",
+        "protocolVersion",
+        "validationPolicyVersion",
+        "responseSchemaSha256",
+        "protocolSha256"
+      ],
+      "type": "object"
+    },
+    "headSha": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "outputs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "type": "integer"
+          },
+          "outputRef": {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": {
+                "type": "integer"
+              },
+              "parts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "byteLength": {
+                      "type": "integer"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "byteLength",
+                    "file"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "sha256": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sha256",
+              "byteLength",
+              "parts"
+            ],
+            "type": "object"
+          },
+          "workId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workId",
+          "attempt",
+          "outputRef"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "passId": {
+      "type": "string"
+    },
+    "planFileSha256": {
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "resultRef": {
+      "additionalProperties": false,
+      "properties": {
+        "byteLength": {
+          "type": "integer"
+        },
+        "parts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": {
+                "type": "integer"
+              },
+              "file": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sha256",
+              "byteLength",
+              "file"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "byteLength",
+        "parts"
+      ],
+      "type": "object"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 2
+    },
+    "startSha": {
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "works": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attemptCount": {
+            "type": "integer"
+          },
+          "correctionRef": {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": {
+                "type": "integer"
+              },
+              "parts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "byteLength": {
+                      "type": "integer"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "byteLength",
+                    "file"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "sha256": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sha256",
+              "byteLength",
+              "parts"
+            ],
+            "type": "object"
+          },
+          "failure": {
+            "type": "string"
+          },
+          "inFlight": {
+            "type": "boolean"
+          },
+          "parentWorkId": {
+            "type": "string"
+          },
+          "preparedRef": {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": {
+                "type": "integer"
+              },
+              "parts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "byteLength": {
+                      "type": "integer"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "byteLength",
+                    "file"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "sha256": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sha256",
+              "byteLength",
+              "parts"
+            ],
+            "type": "object"
+          },
+          "repairUsed": {
+            "type": "boolean"
+          },
+          "resultRef": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "byteLength": {
+                    "type": "integer"
+                  },
+                  "parts": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byteLength": {
+                          "type": "integer"
+                        },
+                        "file": {
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sha256",
+                        "byteLength",
+                        "file"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "sha256": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sha256",
+                  "byteLength",
+                  "parts"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "superseded": {
+            "type": "boolean"
+          },
+          "workId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workId",
+          "parentWorkId",
+          "role",
+          "preparedRef",
+          "resultRef",
+          "failure",
+          "superseded",
+          "inFlight",
+          "attemptCount",
+          "repairUsed",
+          "correctionRef"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "producer",
+    "compatibility",
+    "runId",
+    "passId",
+    "planHash",
+    "planFileSha256",
+    "baseSha",
+    "startSha",
+    "headSha",
+    "status",
+    "startedAt",
+    "resultRef",
+    "works",
+    "attempts",
+    "outputs"
+  ],
+  "title": "review-execution-archive-v2",
+  "type": "object"
+}
