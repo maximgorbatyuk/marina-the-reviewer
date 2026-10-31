@@ -126,18 +126,27 @@ func (s *terminalSession) send(t *testing.T, value string) {
 }
 func (s *terminalSession) waitFor(t *testing.T, value string) {
 	t.Helper()
-	timer := time.NewTimer(15 * time.Second)
+	s.waitForSince(t, value, 0)
+}
+func (s *terminalSession) waitForSince(t *testing.T, value string, start int) {
+	t.Helper()
+	if err := s.waitForOutput(value, start, 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
+func (s *terminalSession) waitForOutput(value string, start int, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
-		if strings.Contains(ansi.Strip(s.text()), value) {
-			return
+		if strings.Contains(ansi.Strip(s.text()[start:]), value) {
+			return nil
 		}
 		select {
 		case <-s.changed:
 		case <-s.done:
-			t.Fatalf("terminal exited before %q: %v", value, s.err)
+			return fmt.Errorf("terminal exited before %q: %v\nterminal output:\n%s", value, s.err, ansi.Strip(s.text()))
 		case <-timer.C:
-			t.Fatalf("terminal did not show %q", value)
+			return fmt.Errorf("terminal did not show %q within %s\nterminal output:\n%s", value, timeout, ansi.Strip(s.text()))
 		}
 	}
 }
@@ -152,7 +161,7 @@ func (s *terminalSession) exit(t *testing.T, code int) {
 	select {
 	case <-s.done:
 	case <-time.After(15 * time.Second):
-		t.Fatal("terminal did not exit")
+		t.Fatalf("terminal did not exit\nterminal output:\n%s", ansi.Strip(s.text()))
 	}
 	actual := 0
 	if s.err != nil {
@@ -291,8 +300,10 @@ func TestTUIUsagePeriodsReadLocalHistory(t *testing.T) {
 	s.waitFor(t, "Reviews: 3")
 	s.send(t, "\x1b[6~")
 	s.waitFor(t, "Local CLI history only")
+	// Wait for a new frame so Esc and q cannot merge into Alt+q.
+	homeStart := len(s.text())
 	s.send(t, "\x1b")
-	s.waitFor(t, "> Usage")
+	s.waitForSince(t, "> Usage", homeStart)
 	s.send(t, "q")
 	s.exit(t, 0)
 	after, err := os.ReadFile(journal)
