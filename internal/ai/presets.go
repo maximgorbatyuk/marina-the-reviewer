@@ -24,7 +24,7 @@ func Presets() []Preset {
 	for _, d := range definitions {
 		result = append(result, Preset{Name: d.name, Local: d.local, Profile: config.Profile{
 			Backend: "openai-compatible", BaseURL: d.url, ResponseFormat: d.format,
-			OutputTokenParameter: "max_tokens", ContextLength: 131072,
+			OutputTokenParameter: "max_tokens", ContextLength: config.DefaultContextLength,
 			MaximumConcurrentRequests: 1, TimeoutSeconds: 300, MaximumAttempts: 2,
 		}})
 	}

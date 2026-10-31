@@ -6,6 +6,8 @@ import (
 	"math"
 	"slices"
 	"strings"
+
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 )
 
 type BudgetError struct{ Code, Message string }
@@ -31,7 +33,7 @@ func normalizeOptions(o PlanOptions) PlanOptions {
 		o.SystemPrompt = SystemPrompt(o.SystemPrompt)
 	}
 	if o.ContextLength == 0 {
-		o.ContextLength = 131072
+		o.ContextLength = config.DefaultContextLength
 	}
 	if o.SafetyTokens == 0 {
 		o.SafetyTokens = 256 + int(math.Ceil(float64(o.ContextLength)*0.1)) + 384
