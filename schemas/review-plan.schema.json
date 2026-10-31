@@ -1520,6 +1520,19 @@
                     "outputTokenParameter": {
                       "type": "string"
                     },
+                    "provider": {
+                      "enum": [
+                        "",
+                        "openai",
+                        "openrouter",
+                        "xiaomi-mimo",
+                        "deepseek",
+                        "groq",
+                        "ollama",
+                        "openai-compatible"
+                      ],
+                      "type": "string"
+                    },
                     "responseFormat": {
                       "type": "string"
                     },
@@ -1628,6 +1641,19 @@
                   "type": "string"
                 },
                 "outputTokenParameter": {
+                  "type": "string"
+                },
+                "provider": {
+                  "enum": [
+                    "",
+                    "openai",
+                    "openrouter",
+                    "xiaomi-mimo",
+                    "deepseek",
+                    "groq",
+                    "ollama",
+                    "openai-compatible"
+                  ],
                   "type": "string"
                 },
                 "responseFormat": {

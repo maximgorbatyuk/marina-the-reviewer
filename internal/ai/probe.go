@@ -17,8 +17,6 @@ type ProbeResult struct {
 
 func Probe(ctx context.Context, provider config.ProviderSnapshot, token string) (ProbeResult, error) {
 	started := time.Now()
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
 	ctx = usage.WithOperation(ctx, "connection-test")
 	budget := 1024
 	if n := provider.Profile.ContextLength; n > 0 {

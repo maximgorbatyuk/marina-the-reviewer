@@ -27,11 +27,11 @@ marinadoreview
 marinadoreview --config ./config.local.json
 ```
 
-The home screen shows the version, configuration path, and primary/fallback status. Open **Providers and routing** to create or edit profiles. Choose an AI provider preset (OpenAI, OpenRouter, DeepSeek, Groq, Ollama, or another OpenAI-compatible API), enter the API URL and authorization source, then load the model list or type a model ID. The model list depends on the server; manual entry remains available when listing is unsupported or unavailable.
+The home screen shows the version, configuration path, and primary/fallback status. Open **Providers and routing** to create or edit profiles. Choose an AI provider preset (OpenAI, OpenRouter, DeepSeek, Groq, Ollama, Xiaomi MiMo, or another OpenAI-compatible API), enter the API URL and authorization source, then load the model list or type a model ID. The model list depends on the server; manual entry remains available when listing is unsupported or unavailable.
 
 Paste an API token into its masked field, select an environment variable or private token file, or explicitly select no authorization for a suitable local server. A blank replacement preserves a saved token. Selecting an authorization source again clears its saved value; changing the API URL requires entering credentials again. Tokens and extra parameter values are hidden in the configuration viewer.
 
-**Test connection** sends one small AI request to the selected model using its JSON settings. It can use billed tokens, sends no source code, and does not retry or switch to fallback. A successful model-list request does not prove inference access. The status shows the last test time and duration; changes reset it, and a new session starts as untested. A small successful test does not guarantee a complete code review or support for every response schema. Offline configuration is supported without a successful test.
+**Test connection** sends one small AI request to the selected model using its JSON settings and configured request timeout. It can use billed tokens, sends no source code, and does not retry or switch to fallback. A successful model-list request does not prove inference access. The status shows the last test time and duration; changes reset it, and a new session starts as untested. A small successful test does not guarantee a complete code review or support for every response schema. Offline configuration is supported without a successful test.
 
 Apply profile edits to the draft, then press `s` in Providers to save. Use `p` to assign the selected profile as primary, `f` for fallback, and `d` to disable fallback. Other profiles remain saved. Advanced settings expose JSON mode, token/context limits, timeout, retries, concurrency and streaming; existing extra parameters remain intact. Save validates the whole configuration and writes it atomically with private permissions. If the file changed externally, reload it before saving.
 
@@ -67,7 +67,7 @@ Replace the example endpoints and models. A configuration can hold multiple prof
       "responseFormat": "json_schema",
       "outputTokenParameter": "max_tokens",
       "maximumAttempts": 2,
-      "timeoutSeconds": 300
+      "timeoutSeconds": 3300
     },
     "backup": {
       "backend": "openai-compatible",
@@ -84,7 +84,35 @@ Replace the example endpoints and models. A configuration can hold multiple prof
 
 Each profile accepts exactly one of `apiKey`, `apiKeyEnv`, or `apiKeyFile`. Configuration with literal tokens and token files must have private permissions (`0600`). `config init` creates its directory with `0700` and preserves an existing file. Environment references work well in CI; private token files avoid command-line token exposure.
 
-Other settings include `stream`, `maximumOutputTokens`, `maximumConcurrentRequests`, and `extraParameters`. New routes derive MiMo and DeepSeek output reserves from the model name, independently of the profile alias; an explicit `maximumOutputTokens` takes priority. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
+The AI request timeout defaults to **3300 seconds**. `plan` and `review` accept
+`--request-timeout-seconds SECONDS` to replace the timeout for both primary and
+fallback. The argument takes precedence over the selected profiles. Without it,
+explicit profile timeouts remain in effect. A saved plan retains its timeout;
+`run` rejects an override. The total review deadline is a separate budget and
+can end a request before its per-request timeout.
+If a configured fallback is allowed and the remaining deadline cannot fit a full
+primary retry plus its backoff, the CLI selects fallback instead of spending that
+window on another primary attempt. Without fallback, the retry policy is unchanged.
+
+For a selected MiMo model, the **Xiaomi MiMo** preset uses `stream=true`, `response_format=json_object`,
+`max_completion_tokens`, and `thinking.type=enabled`, as the Marina HTTP client
+does. JSON mode puts the review schema in the system message. It keeps the
+1,048,576-token context and the 131,072-token output budget. Direct MiMo model
+arguments with `--provider xiaomi-mimo` use these same defaults when no configuration file exists. Existing configured profiles keep their
+explicit wire settings; update those profiles when migrating from other defaults.
+
+Profiles store an optional `provider` enum: `openai`, `openrouter`, `xiaomi-mimo`,
+`deepseek`, `groq`, `ollama`, or `openai-compatible`. The provider identity is
+independent of the profile name, model ID, and API URL. TUI provider selection
+saves this value and restores it for custom endpoints. Existing profiles and
+saved plans without a provider identity retain their settings. The `backend`
+field still selects the `openai-compatible` transport.
+Xiaomi MiMo uses `https://token-plan-sgp.xiaomimimo.com/v1` when no URL is supplied.
+The TUI URL field, profile `baseUrl`, and `--base-url` argument can select another
+HTTPS endpoint. An explicit URL is retained; credentials still follow their
+configured endpoint scope.
+
+Other settings include `stream`, `maximumOutputTokens`, `maximumConcurrentRequests`, and `extraParameters`. Routes use the provider enum for MiMo and DeepSeek output reserves. Legacy profiles without this identity retain model-based detection; an explicit `maximumOutputTokens` takes priority. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
 
 ## Review a change
 
