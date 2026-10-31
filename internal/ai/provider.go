@@ -67,6 +67,9 @@ func IsRetryable(err error) bool {
 	return errors.As(err, &providerErr) && (providerErr.Code == "network_error" || providerErr.Code == "timeout" || providerErr.Code == "rate_limit" || providerErr.Code == "server_error")
 }
 
+// An absolute in-memory URI keeps schema references independent of the process directory.
+const responseSchemaResourceURI = "https://marinadoreview.invalid/review-schema.json"
+
 // Complete sends one inference request and retains the provider response for validation.
 func Complete(ctx context.Context, provider config.ProviderSnapshot, token string, input Request) (result Response, callErr error) {
 	started := time.Now()
@@ -79,14 +82,19 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 	if json.Unmarshal(input.Schema, &responseSchema) != nil || externalReference(responseSchema) {
 		return Response{}, &Error{Code: "configuration", Message: "response schema must be self-contained JSON"}
 	}
+	secrets := make(map[string]string, len(input.RedactionSecrets)+1)
+	for _, value := range input.RedactionSecrets {
+		secrets[value] = value
+	}
+	secrets[token] = token
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
-	if err := compiler.AddResource("review-schema.json", responseSchema); err != nil {
-		return Response{}, &Error{Code: "configuration", Message: "invalid response schema"}
+	if err := compiler.AddResource(responseSchemaResourceURI, responseSchema); err != nil {
+		return Response{}, &Error{Code: "configuration", Message: "invalid response schema: " + redact.Text(err.Error(), secrets)}
 	}
-	compiled, err := compiler.Compile("review-schema.json")
+	compiled, err := compiler.Compile(responseSchemaResourceURI)
 	if err != nil {
-		return Response{}, &Error{Code: "configuration", Message: "response schema could not be compiled"}
+		return Response{}, &Error{Code: "configuration", Message: "response schema could not be compiled: " + redact.Text(err.Error(), secrets)}
 	}
 	system := input.SystemPrompt
 	responseFormat := map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "architecture_review", "strict": true, "schema": responseSchema}}
@@ -139,11 +147,6 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	secrets := make(map[string]string, len(input.RedactionSecrets)+1)
-	for _, value := range input.RedactionSecrets {
-		secrets[value] = value
-	}
-	secrets[token] = token
 	meta := usageMetadata(provider, token)
 	for _, value := range []*string{&meta.ProviderID, &meta.Provider, &meta.ProviderKind, &meta.Profile, &meta.Model} {
 		*value = redact.Text(*value, secrets)
