@@ -238,6 +238,11 @@ func Prepare(ctx context.Context, o PrepareOptions) (Snapshot, error) {
 		}
 		s.Files = append(s.Files, f)
 	}
+	hasGo := false
+	for _, file := range s.Files {
+		hasGo = hasGo || isGoSource(file.NewPath) || isGoSource(file.OldPath) || isGoMetadata(file.NewPath) || isGoMetadata(file.OldPath)
+	}
+	goContextBytes := 0
 	// Read object contents so later analysis does not depend on a working tree.
 	for _, rev := range []Revision{Base, Head} {
 		sha := base
@@ -254,17 +259,24 @@ func Prepare(ctx context.Context, o PrepareOptions) (Snapshot, error) {
 				continue
 			}
 			path := string(pair[1])
-			if seen[path] || !strings.HasSuffix(strings.ToLower(path), ".java") {
+			if seen[path] || !strings.HasSuffix(strings.ToLower(path), ".java") && (!hasGo || !goContextPath(path)) {
 				continue
 			}
 			meta := strings.Fields(string(pair[0]))
-			if len(meta) != 3 || meta[1] != "blob" {
+			if len(meta) != 3 || meta[1] != "blob" || meta[0] == "120000" {
 				continue
 			}
 			source, reason := read(sha, path, rev, meta[0])
 			if reason != "" {
 				s.Limitations = append(s.Limitations, path+": dependency source unavailable: "+reason)
 				continue
+			}
+			if goContextPath(path) {
+				goContextBytes += len(source.Content)
+				if goContextBytes > 32*1024*1024 {
+					s.Limitations = append(s.Limitations, "Go dependency context exceeds the 32 MiB source budget; dependency resolution is partial.")
+					continue
+				}
 			}
 			found := -1
 			for i := range s.Files {

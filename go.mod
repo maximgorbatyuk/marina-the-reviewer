@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	golang.org/x/mod v0.42.0
 	modernc.org/sqlite v1.61.0
 )
 

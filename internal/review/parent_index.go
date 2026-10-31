@@ -23,6 +23,9 @@ func graphParentsContext(ctx context.Context, nodes []GraphNode) (map[string]str
 		if err := ctx.Err(); err != nil {
 			return nil, stats, err
 		}
+		if isGoSource(node.Path) {
+			continue
+		}
 		key := sourceKey{node.Path, node.Revision}
 		groups[key] = append(groups[key], i)
 	}

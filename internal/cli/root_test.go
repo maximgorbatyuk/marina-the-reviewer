@@ -50,3 +50,17 @@ func TestUnknownCommandIsUsageError(t *testing.T) {
 		t.Fatalf("unexpected stdout: %s", out.String())
 	}
 }
+
+func TestCapabilitiesAdvertiseGoAnalysisAndDependencies(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"capabilities", "--json"}, &bytes.Buffer{}, &out, &errOut); code != 0 {
+		t.Fatalf("capabilities failed: %d %s", code, errOut.String())
+	}
+	var capabilities map[string]any
+	if err := json.Unmarshal(out.Bytes(), &capabilities); err != nil {
+		t.Fatal(err)
+	}
+	if capabilities["goAstAnalysis"] != true || capabilities["goDependencyContext"] != true || capabilities["sourceSelectionVersion"] != float64(3) {
+		t.Fatalf("Go support is not discoverable: %v", capabilities)
+	}
+}

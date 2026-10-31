@@ -11,9 +11,9 @@ import (
 )
 
 // CurrentSelectionVersion identifies the algorithm used to select changed code and dependency context.
-const CurrentSelectionVersion = 2
+const CurrentSelectionVersion = 3
 
-func selectMRGraphContext(ctx context.Context, full Graph, symbols []javaSymbol) (Graph, map[string]string, map[string]bool, error) {
+func selectMRGraphContext(ctx context.Context, full Graph, symbols []javaSymbol, required ...map[string]bool) (Graph, map[string]string, map[string]bool, error) {
 	nodes := make(map[string]GraphNode, len(full.Nodes))
 	parents := map[string]string{}
 	included := map[string]bool{}
@@ -24,6 +24,11 @@ func selectMRGraphContext(ctx context.Context, full Graph, symbols []javaSymbol)
 		nodes[node.ID] = node
 		if node.Change != 0 {
 			included[node.ID] = true
+		}
+		for _, additions := range required {
+			if additions[node.SourceSymbolID] {
+				included[node.ID] = true
+			}
 		}
 	}
 	for _, edge := range full.Edges {
@@ -189,7 +194,7 @@ func possibleMoveEdgesContext(ctx context.Context, symbols []javaSymbol) ([]Grap
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if symbol.node.Kind != 4 || symbol.node.Change != 1 && symbol.node.Change != 3 {
+		if isGoSource(symbol.node.Path) || symbol.node.Kind != 4 || symbol.node.Change != 1 && symbol.node.Change != 3 {
 			continue
 		}
 		tokens := map[string]bool{}
