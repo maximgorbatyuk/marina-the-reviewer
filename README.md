@@ -4,6 +4,15 @@
 
 It reads pinned Git objects. It does not fetch, change branches, run repository hooks or build scripts, or post comments to a hosting service.
 
+## From Git diff to the AI request
+
+These guides explain diff parsing, dependency context, the compact graph and the
+source code sent alongside the prompt. Each includes ASCII diagrams and a
+self-contained example of source code and captured request data:
+
+- [Java: diff parsing, dependency context and AI input](docs/java-diff-to-ai.md) (Russian).
+- [Go: AST analysis, dependency context and AI input](docs/go-diff-to-ai.md) (Russian).
+
 ## Install
 
 ```sh
