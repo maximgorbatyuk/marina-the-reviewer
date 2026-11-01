@@ -7,11 +7,11 @@ It reads pinned Git objects. It does not fetch, change branches, run repository 
 ## From Git diff to the AI request
 
 These guides explain diff parsing, dependency context, the compact graph and the
-source code sent alongside the prompt. Each uses ASCII diagrams and captured
-request examples from an offline run:
+source code sent alongside the prompt. Each includes ASCII diagrams and a
+self-contained example of source code and captured request data:
 
-- [Java: product-application-service MR !1764](docs/java-diff-to-ai.md) (Russian).
-- [Go: marinadoreview commits `bcd9b818` → `f5c463c4`](docs/go-diff-to-ai.md) (Russian).
+- [Java: diff parsing, dependency context and AI input](docs/java-diff-to-ai.md) (Russian).
+- [Go: AST analysis, dependency context and AI input](docs/go-diff-to-ai.md) (Russian).
 
 ## Install
 
