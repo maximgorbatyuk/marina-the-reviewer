@@ -48,7 +48,7 @@ func (m *model) loadUsage() tea.Cmd {
 			result.err = err
 			return result
 		}
-		store, err := usage.DefaultStore()
+		store, err := usage.RecordingStore(ctx)
 		if err == nil {
 			result.report, err = usage.Generate(store, time.Now().UTC(), []int{7, 30, 90})
 		}

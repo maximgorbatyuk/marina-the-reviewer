@@ -14,7 +14,7 @@ builds:
       - arm64
       - amd64
     ldflags:
-      - -s -w -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version={{.Version}} -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Commit={{.FullCommit}} -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Date={{.Date}}
+      - -s -w -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Channel={{ if .IsSnapshot }}dev{{ else }}production{{ end }} -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version={{.Version}} -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Commit={{.FullCommit}} -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Date={{.Date}}
 
 archives:
   - formats: [tar.gz]

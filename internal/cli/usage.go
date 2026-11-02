@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,9 +14,9 @@ import (
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
-func usageCommand(args []string, out, errOut io.Writer) int {
+func usageCommand(ctx context.Context, args []string, out, errOut io.Writer) int {
 	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
-		_, _ = fmt.Fprintln(out, "usage: marinadoreview usage [--period 7d|30d|90d] [--json]\n\nShows local token and code review statistics, retained for 90 days. Without --period, shows all three windows.\nMARINADOREVIEW_DB_FILE selects another private SQLite database.")
+		_, _ = fmt.Fprintln(out, "usage: marinadoreview usage [--period 7d|30d|90d] [--json]\n\nShows local token and code review statistics, retained for 90 days. Without --period, shows all three windows.\nAll calls to this build share its fixed statistics database.")
 		return 0
 	}
 	fs := flag.NewFlagSet("usage", flag.ContinueOnError)
@@ -38,7 +39,7 @@ func usageCommand(args []string, out, errOut io.Writer) int {
 		_, _ = fmt.Fprintln(errOut, "usage accepts only --period and --json")
 		return 2
 	}
-	store, err := usage.DefaultStore()
+	store, err := usage.RecordingStore(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintln(errOut, err)
 		return 5

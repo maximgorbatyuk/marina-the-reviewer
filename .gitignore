@@ -14,3 +14,8 @@ config.local.json
 /marinadoreview
 
 __pycache__/
+stats.sqlite3
+stats.sqlite3.lock
+stats.sqlite3-wal
+stats.sqlite3-shm
+stats.sqlite3-journal

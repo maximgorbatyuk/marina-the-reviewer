@@ -228,8 +228,6 @@ func TestReportRejectsOverflowAndConflictingResults(t *testing.T) {
 }
 
 func TestDefaultUsagePathIsIndependentOfProviderConfig(t *testing.T) {
-	t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
-	t.Setenv("MARINADOREVIEW_DB_FILE", "")
 	first, err := DefaultPath()
 	if err != nil {
 		t.Fatal(err)

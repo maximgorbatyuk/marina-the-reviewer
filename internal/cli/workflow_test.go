@@ -16,6 +16,7 @@ import (
 
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/engine"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/runstore"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
 func TestGitToReviewAndResume(t *testing.T) {
@@ -93,10 +94,17 @@ func TestGitToReviewAndResume(t *testing.T) {
 	if err := os.WriteFile(conf, []byte(`{"version":1,"routing":{"primary":"local"},"profiles":{"local":{"baseUrl":"`+server.URL+`","model":"fake","apiKeyEnv":"MTR_TEST_CLI_KEY","contextLength":65536}}}`), 0600); err != nil {
 		t.Error(err)
 	}
+	recorder := usage.NewRecorder(filepath.Join(dir, "stats", "stats.sqlite3"))
+	t.Cleanup(func() {
+		if err := recorder.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	ctx := usage.WithRecorder(t.Context(), recorder)
 	invoke := func(args ...string) map[string]any {
 		t.Helper()
 		var out, errs bytes.Buffer
-		if code := Run(args, &bytes.Buffer{}, &out, &errs); code != 0 {
+		if code := RunContext(ctx, args, &bytes.Buffer{}, &out, &errs); code != 0 {
 			t.Fatalf("exit %d: %s\n%s", code, errs.String(), out.String())
 		}
 		if out.Len() == 0 {
@@ -129,6 +137,17 @@ func TestGitToReviewAndResume(t *testing.T) {
 	invoke("run", "--input", plan, "--config", conf, "--run-dir", runDir)
 	if calls.Load() != 1 {
 		t.Fatalf("calls %d", calls.Load())
+	}
+	var usageOut, usageErr bytes.Buffer
+	if code := RunContext(ctx, []string{"usage", "--period", "7d", "--json"}, &bytes.Buffer{}, &usageOut, &usageErr); code != 0 {
+		t.Fatalf("usage exit %d: %s", code, usageErr.String())
+	}
+	var report usage.Report
+	if err := json.Unmarshal(usageOut.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Periods) != 1 || report.Periods[0].Reviews.Complete != 1 || report.Periods[0].Reviews.Total != 1 || report.Periods[0].Total.Requests != 1 {
+		t.Fatalf("review and usage did not share one history: %+v", report)
 	}
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {

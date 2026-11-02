@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo"
 )
 
 func fixedTime() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) }
@@ -254,24 +257,135 @@ func TestStoreRejectsSymlinksAndForeignDatabases(t *testing.T) {
 	}
 }
 
-func TestDefaultStoreOverrides(t *testing.T) {
-	dir := t.TempDir()
-	old := filepath.Join(dir, "usage.jsonl")
-	db := filepath.Join(dir, "chosen.sqlite3")
-	t.Setenv("MARINADOREVIEW_USAGE_FILE", old)
-	t.Setenv("MARINADOREVIEW_DB_FILE", "")
-	s, err := DefaultStore()
-	if err != nil || s.Path != old+".sqlite3" || s.LegacyPath != old || s.RetireLegacy {
-		t.Fatalf("legacy override: %+v %v", s, err)
+func TestDefaultStoreIgnoresDatabaseOverrides(t *testing.T) {
+	for _, channel := range []string{"dev", "production"} {
+		t.Run(channel, func(t *testing.T) {
+			setBuildChannel(t, channel)
+			t.Setenv("MARINADOREVIEW_DB_FILE", "")
+			t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
+			want, err := DefaultStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, names := range [][]string{{"MARINADOREVIEW_DB_FILE"}, {"MARINADOREVIEW_USAGE_FILE"}, {"MARINADOREVIEW_DB_FILE", "MARINADOREVIEW_USAGE_FILE"}} {
+				t.Run(strings.Join(names, "+"), func(t *testing.T) {
+					for _, name := range names {
+						t.Setenv(name, filepath.Join(t.TempDir(), "external"))
+					}
+					got, err := DefaultStore()
+					if err != nil || got.Path != want.Path || got.LegacyPath != want.LegacyPath || got.RetireLegacy != want.RetireLegacy {
+						t.Fatalf("environment redirected statistics: %+v %v", got, err)
+					}
+				})
+			}
+		})
 	}
-	t.Setenv("MARINADOREVIEW_DB_FILE", db)
-	s, err = DefaultStore()
-	if err != nil || s.Path != db || s.LegacyPath != old {
-		t.Fatalf("both overrides: %+v %v", s, err)
+}
+
+func TestDefaultStoreIsIndependentOfCallerDirectories(t *testing.T) {
+	for _, channel := range []string{"dev", "production"} {
+		t.Run(channel, func(t *testing.T) {
+			setBuildChannel(t, channel)
+			t.Setenv("XDG_CONFIG_HOME", "")
+			want, err := DefaultStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+			t.Setenv("MARINADOREVIEW_CONFIG", filepath.Join(dir, "provider.json"))
+			t.Chdir(dir)
+			got, err := DefaultStore()
+			if err != nil || got.Path != want.Path || got.LegacyPath != want.LegacyPath || got.RetireLegacy != want.RetireLegacy {
+				t.Fatalf("caller directories redirected statistics: %+v %v", got, err)
+			}
+		})
 	}
-	t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
-	s, err = DefaultStore()
-	if err != nil || s.Path != db || s.LegacyPath != "" {
-		t.Fatalf("new override: %+v %v", s, err)
+}
+
+func setBuildChannel(t *testing.T, channel string) {
+	t.Helper()
+	original := buildinfo.Channel
+	buildinfo.Channel = channel
+	t.Cleanup(func() { buildinfo.Channel = original })
+}
+
+func TestDevelopmentStatisticsBesideExecutable(t *testing.T) {
+	setBuildChannel(t, "dev")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := DefaultStore()
+	want := filepath.Join(filepath.Dir(executable), "stats.sqlite3")
+	if err != nil || store.Path != want || store.LegacyPath != "" {
+		t.Fatalf("development statistics must stay beside the executable: %+v %v; want %s", store, err, want)
+	}
+}
+
+func TestProductionStatisticsKeepUserDirectory(t *testing.T) {
+	setBuildChannel(t, "production")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".config", "marina-the-reviewer")
+	switch runtime.GOOS {
+	case "darwin":
+		dir = filepath.Join(home, "Library", "Application Support", "marina-the-reviewer")
+	case "windows":
+		dir = filepath.Join(home, "AppData", "Roaming", "marina-the-reviewer")
+	}
+	store, err := DefaultStore()
+	if err != nil || store.Path != filepath.Join(dir, "stats.sqlite3") || store.LegacyPath != filepath.Join(dir, "usage.jsonl") || !store.RetireLegacy {
+		t.Fatalf("production statistics moved: %+v %v", store, err)
+	}
+}
+
+func TestUnknownBuildChannelDoesNotFallBackToProduction(t *testing.T) {
+	setBuildChannel(t, "unknown")
+	if store, err := DefaultStore(); err == nil || store.Path != "" {
+		t.Fatalf("unknown build selected statistics storage: %+v %v", store, err)
+	}
+}
+
+func TestDevelopmentDirectoryPermissions(t *testing.T) {
+	setBuildChannel(t, "dev")
+	for _, mode := range []os.FileMode{0700, 0755, 0777} {
+		t.Run(fmt.Sprintf("%o", mode), func(t *testing.T) {
+			store, err := DefaultStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			if err := os.Chmod(dir, mode); err != nil {
+				t.Fatal(err)
+			}
+			store.Path = filepath.Join(dir, "stats.sqlite3")
+			err = store.Append(testEvent("dev", time.Now().UTC()))
+			if mode == 0777 {
+				if err == nil {
+					t.Fatal("development database accepted a directory writable by other users")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Stat(dir)
+			if err != nil || info.Mode().Perm() != mode {
+				t.Fatal("statistics changed executable directory permissions")
+			}
+			if _, err := checkFile(store.Path); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := checkFile(store.Path + ".lock"); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
