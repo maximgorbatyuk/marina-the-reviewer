@@ -27,6 +27,7 @@ class ReleaseTests(unittest.TestCase):
         text = brew.render("0.1.0", "a" * 40, "b" * 64)
         self.assertIn("class MarinaTheReviewer < Formula", text)
         self.assertIn("marinadoreview", text)
+        self.assertIn("#{buildinfo}.Channel=production", text)
         self.assertIn("b" * 64, text)
         self.assertNotIn("no_check", text)
         for version, commit, digest in (("1.0;bad", "a" * 40, "b" * 64), ("0.1.0", "bad", "b" * 64), ("0.1.0", "a" * 40, "bad")):

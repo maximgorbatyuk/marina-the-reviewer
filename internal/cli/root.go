@@ -21,7 +21,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 // RunContext dispatches CLI commands with caller cancellation and isolated input and output streams.
 func RunContext(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
 	if len(args) > 0 && args[0] == "usage" {
-		return usageCommand(args[1:], out, errOut)
+		return usageCommand(ctx, args[1:], out, errOut)
 	}
 	if len(args) == 0 || args[0] == "--config" || strings.HasPrefix(args[0], "--config=") {
 		fs := flag.NewFlagSet("marinadoreview", flag.ContinueOnError)

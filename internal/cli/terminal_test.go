@@ -261,8 +261,6 @@ func TestTUIInterruptCancelsRequestAndRestoresTerminal(t *testing.T) {
 func TestTUIUsagePeriodsReadLocalHistory(t *testing.T) {
 	dir := t.TempDir()
 	journal := filepath.Join(dir, "stats", "stats.sqlite3")
-	t.Setenv("MARINADOREVIEW_DB_FILE", journal)
-	t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
 	now := time.Now().UTC()
 	for i, days := range []int{1, 12, 45} {
 		at := now.Add(-time.Duration(days) * 24 * time.Hour)

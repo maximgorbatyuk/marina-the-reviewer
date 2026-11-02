@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Remove database path overrides and fix statistics storage at build time.
+- Keep development statistics beside the executable and production statistics in the user's application directory.
+
 ## 0.3.1
 
 - Keep unrelated private files intact when a usage journal path is incorrect.

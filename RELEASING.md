@@ -14,7 +14,7 @@ The source branch of the push does not affect this flow. For example, `VERSION` 
 
 An existing tag is reused only when it points to the same commit and matches `VERSION`. New code with an already tagged version fails before publication and requires a version change. A new version must be higher than all existing stable tags. Retrying the original run reuses its tag; a complete published release is not rebuilt or overwritten, and the Homebrew step can continue. An incomplete existing release fails with a diagnostic so its assets can be inspected before retrying.
 
-GoReleaser 2.19.0 builds Darwin/Linux arm64/amd64 with CGO disabled. Version, full commit and date are injected. Releases include binary archives, a source archive and `checksums.txt`.
+GoReleaser 2.19.0 builds Darwin/Linux arm64/amd64 with CGO disabled. Version, full commit, date and build channel are injected. Published binaries and Homebrew builds set `internal/buildinfo.Channel=production`; local builds default to `dev`, and GoReleaser snapshots explicitly use `dev`. Production statistics stay in the user's application directory, while development statistics stay beside the executable. Releases include binary archives, a source archive and `checksums.txt`.
 
 ```sh
 goreleaser check
