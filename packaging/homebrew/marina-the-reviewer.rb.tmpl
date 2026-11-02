@@ -10,13 +10,11 @@ class MarinaTheReviewer < Formula
 
   def install
     buildinfo = "github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo"
-    ldflags = "-s -w -X #{buildinfo}.Version=#{version} -X #{buildinfo}.Commit=@COMMIT@"
+    ldflags = "-s -w -X #{buildinfo}.Channel=production -X #{buildinfo}.Version=#{version} -X #{buildinfo}.Commit=@COMMIT@"
     system "go", "build", *std_go_args(output: bin/"marinadoreview", ldflags: ldflags), "./cmd/marinadoreview"
   end
 
   test do
-    ENV["MARINADOREVIEW_DB_FILE"] = (testpath/"stats/stats.sqlite3").to_s
-    ENV.delete "MARINADOREVIEW_USAGE_FILE"
     identity = JSON.parse(shell_output("#{bin}/marinadoreview --version --json"))
     assert_equal "marina-the-reviewer", identity.fetch("tool")
     assert_equal version.to_s, identity.fetch("version")

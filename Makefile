@@ -3,7 +3,7 @@
 GOLANGCI_LINT ?= golangci-lint
 
 build: lint
-	go build -trimpath -ldflags "-X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version=$$(cat VERSION)-dev" -o bin/marinadoreview ./cmd/marinadoreview
+	go build -trimpath -ldflags "-X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Channel=dev -X github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo.Version=$$(cat VERSION)-dev" -o bin/marinadoreview ./cmd/marinadoreview
 
 test:
 	go test ./...

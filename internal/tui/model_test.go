@@ -12,11 +12,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/config"
 	"github.com/maximgorbatyuk/marina-the-reviewer/internal/review"
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/usage"
 )
 
 func testModel(t *testing.T) *model {
 	t.Helper()
-	m := newModel(context.Background(), filepath.Join(t.TempDir(), "config.json"))
+	dir := t.TempDir()
+	ctx := usage.WithRecorder(t.Context(), usage.NewRecorder(filepath.Join(dir, "stats", "stats.sqlite3")))
+	m := newModel(ctx, filepath.Join(dir, "config.json"))
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return m
 }

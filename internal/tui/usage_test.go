@@ -30,8 +30,6 @@ func TestHomeOpensUsageScreen(t *testing.T) {
 func usageFixture(t *testing.T) (*model, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "private", "stats.sqlite3")
-	t.Setenv("MARINADOREVIEW_DB_FILE", path)
-	t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
 	now := time.Now().UTC()
 	for i, days := range []int{1, 12, 45} {
 		at := now.Add(-time.Duration(days) * 24 * time.Hour)
@@ -45,7 +43,9 @@ func usageFixture(t *testing.T) (*model, string) {
 			t.Fatal(err)
 		}
 	}
-	return testModel(t), path
+	m := testModel(t)
+	m.ctx = usage.WithRecorder(t.Context(), usage.NewRecorder(path))
+	return m, path
 }
 
 func TestUsageShowsTokenAndReviewSections(t *testing.T) {
@@ -156,9 +156,8 @@ func TestUsageShowsProvidersAndIncompleteCounts(t *testing.T) {
 
 func TestUsageEmptyErrorAndRetryWithoutProviderConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing", "stats.sqlite3")
-	t.Setenv("MARINADOREVIEW_DB_FILE", path)
-	t.Setenv("MARINADOREVIEW_USAGE_FILE", "")
 	m := testModel(t)
+	m.ctx = usage.WithRecorder(t.Context(), usage.NewRecorder(path))
 	m.loadFailed = true
 	m.notice = "provider config cannot be read"
 	finishUsageLoad(t, m, m.showUsage())

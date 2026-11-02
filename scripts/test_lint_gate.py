@@ -54,6 +54,7 @@ class LintGateTests(unittest.TestCase):
         self.assertTrue(commands[0].startswith("golangci-lint config verify "), commands)
         self.assertTrue(commands[1].startswith("golangci-lint run "), commands)
         self.assertTrue(any(line.startswith("go build ") for line in commands), commands)
+        self.assertTrue(any("buildinfo.Channel=dev" in line for line in commands), commands)
 
     def test_missing_linter_blocks_build(self):
         result = self.make("build", "GOLANGCI_LINT=./missing-linter")

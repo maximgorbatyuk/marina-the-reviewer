@@ -55,10 +55,11 @@ type Snapshot struct {
 
 // Store selects private statistics storage and legacy import behavior without storing credentials.
 type Store struct {
-	Path         string
-	LegacyPath   string
-	RetireLegacy bool
-	Now          func() time.Time
+	Path                 string
+	LegacyPath           string
+	RetireLegacy         bool
+	Now                  func() time.Time
+	developmentDirectory bool
 }
 
 func (s Store) now() time.Time {

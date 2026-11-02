@@ -9,44 +9,45 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/maximgorbatyuk/marina-the-reviewer/internal/buildinfo"
 
 	_ "modernc.org/sqlite" // Register the SQLite driver used by private statistics storage.
 )
 
-// DefaultStore resolves private statistics storage and optional legacy import settings.
+// DefaultStore resolves the fixed database location selected when the binary was built.
 func DefaultStore() (Store, error) {
-	selected, legacy := os.Getenv("MARINADOREVIEW_DB_FILE"), os.Getenv("MARINADOREVIEW_USAGE_FILE")
-	s := Store{}
-	if selected != "" {
-		s.Path = selected
-		s.LegacyPath = legacy
-	} else if legacy != "" {
-		s.Path, s.LegacyPath = legacy+".sqlite3", legacy
-	} else {
-		dir, err := os.UserConfigDir()
+	if buildinfo.Channel == "dev" {
+		executable, err := os.Executable()
 		if err != nil {
-			return s, errors.New("cannot locate statistics directory")
+			return Store{}, errors.New("cannot locate development executable")
 		}
-		dir = filepath.Join(dir, "marina-the-reviewer")
-		s.Path, s.LegacyPath, s.RetireLegacy = filepath.Join(dir, "stats.sqlite3"), filepath.Join(dir, "usage.jsonl"), true
-	}
-	var err error
-	s.Path, err = filepath.Abs(s.Path)
-	if err != nil {
-		return Store{}, errors.New("cannot resolve statistics path")
-	}
-	if s.LegacyPath != "" {
-		s.LegacyPath, err = filepath.Abs(s.LegacyPath)
+		executable, err = filepath.EvalSymlinks(executable)
 		if err != nil {
-			return Store{}, errors.New("cannot resolve legacy usage path")
+			return Store{}, errors.New("cannot resolve development executable")
 		}
+		return Store{Path: filepath.Join(filepath.Dir(executable), "stats.sqlite3"), developmentDirectory: true}, nil
 	}
-	if s.Path == s.LegacyPath {
-		return Store{}, errors.New("SQLite and legacy usage paths must differ")
+	if buildinfo.Channel != "production" {
+		return Store{}, errors.New("unsupported statistics build channel")
 	}
-	return s, nil
+	home, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(home) {
+		return Store{}, errors.New("cannot locate statistics directory")
+	}
+	dir := filepath.Join(home, ".config")
+	switch runtime.GOOS {
+	case "darwin":
+		dir = filepath.Join(home, "Library", "Application Support")
+	case "windows":
+		dir = filepath.Join(home, "AppData", "Roaming")
+	}
+	// Caller-specific configuration directories must not split the usage history.
+	dir = filepath.Join(dir, "marina-the-reviewer")
+	return Store{Path: filepath.Join(dir, "stats.sqlite3"), LegacyPath: filepath.Join(dir, "usage.jsonl"), RetireLegacy: true}, nil
 }
 
 // DefaultPath returns the resolved private statistics database path.
@@ -55,6 +56,15 @@ func DefaultPath() (string, error) { s, err := DefaultStore(); return s.Path, er
 func privateInfo(info os.FileInfo, directory bool) bool {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return ok && stat.Uid == uint32(os.Geteuid()) && info.Mode().Perm()&0077 == 0 && ((directory && info.IsDir()) || (!directory && info.Mode().IsRegular()))
+}
+
+func (s Store) validDirectory(info os.FileInfo) bool {
+	if !s.developmentDirectory {
+		return privateInfo(info, true)
+	}
+	// A development binary may live in a readable directory, but other users must not replace its database.
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Uid == uint32(os.Geteuid()) && info.IsDir() && info.Mode().Perm()&0022 == 0
 }
 
 func checkFile(path string) (os.FileInfo, error) {
@@ -130,7 +140,7 @@ func (s Store) open(write bool, now time.Time) (*session, error) {
 		return nil, errors.New("cannot create statistics directory")
 	}
 	dirInfo, err := os.Lstat(dir)
-	if err != nil || !privateInfo(dirInfo, true) {
+	if err != nil || !s.validDirectory(dirInfo) {
 		return nil, errors.New("statistics directory must be private and owned")
 	}
 	lock, err := lockFile(s.Path + ".lock")
