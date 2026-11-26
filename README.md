@@ -123,7 +123,13 @@ The TUI URL field, profile `baseUrl`, and `--base-url` argument can select anoth
 HTTPS endpoint. An explicit URL is retained; credentials still follow their
 configured endpoint scope.
 
-Other settings include `stream`, `maximumOutputTokens`, `maximumConcurrentRequests`, and `extraParameters`. Routes use the provider enum for MiMo and DeepSeek output reserves. Legacy profiles without this identity retain model-based detection; an explicit `maximumOutputTokens` takes priority. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
+By default, a new review reserves 20% of the configured context window for each
+response, rounded up and capped at 65,536 tokens (131,072 for MiMo). This applies
+to both primary and fallback requests. Set `maximumOutputTokens` in a profile to
+use an explicit limit, for example when the model API accepts a lower maximum.
+The profile's `outputTokenParameter` selects the field sent to the API.
+
+Other settings include `stream`, `maximumConcurrentRequests`, and `extraParameters`. Routes use the provider enum for MiMo and DeepSeek output reserves. Legacy profiles without this identity retain model-based detection. Execution is currently serial, so each concurrency limit is respected. Protected request fields cannot be replaced through `extraParameters`. Remote API endpoints require HTTPS; loopback HTTP is supported for local models. HTTP redirects are not followed. Use `json_object` for servers without strict JSON Schema support.
 
 ## Review a change
 

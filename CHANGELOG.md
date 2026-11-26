@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.10
+
+- Increase the default review output budget to 65,536 tokens for all providers, within the configured context window. Keep the 131,072-token default maximum for MiMo and honor explicit profile limits.
+
 ## 0.3.9
 
 - Omit the temperature parameter for Qwen Token Plan requests that use the auto model.

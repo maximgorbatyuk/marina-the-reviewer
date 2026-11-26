@@ -163,6 +163,56 @@ func routeFor(t *testing.T, a, b string) (config.Config, config.Route) {
 	}
 	return c, r
 }
+
+func TestReviewRequestOutputBudget(t *testing.T) {
+	for _, test := range []struct {
+		name, model, parameter    string
+		provider                  config.ProviderKind
+		context, configured, want int
+	}{
+		{name: "Qwen auto", model: "auto", provider: config.ProviderOpenAICompatible,
+			parameter: "max_tokens", context: 1048576, want: 65536},
+		{name: "named OpenAI model", model: "gpt-5", provider: config.ProviderOpenAI,
+			parameter: "max_completion_tokens", context: 1048576, want: 65536},
+		{name: "smaller context", model: "local-model", provider: config.ProviderOllama,
+			parameter: "max_tokens", context: 131072, want: 26215},
+		{name: "explicit provider limit", model: "custom-model", provider: config.ProviderOpenRouter,
+			parameter: "max_tokens", context: 1048576, configured: 8192, want: 8192},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				var limit int
+				if err := json.Unmarshal(body[test.parameter], &limit); err != nil || limit != test.want {
+					t.Errorf("%s = %d, want %d (decode error: %v)", test.parameter, limit, test.want, err)
+				}
+				okModel(w)
+			}))
+			defer server.Close()
+
+			cfg := config.Config{Version: 1, Routing: config.Routing{Primary: "review"}, Profiles: map[string]config.Profile{
+				"review": {BaseURL: server.URL, Model: test.model, Provider: test.provider, ContextLength: test.context,
+					OutputTokenParameter: test.parameter, MaximumOutputTokens: test.configured},
+			}}
+			route, err := config.ResolveRouting(cfg, config.Overrides{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan, err := BuildDocument(document(), route, "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := Run(context.Background(), plan, cfg, filepath.Join(t.TempDir(), "run"))
+			if err != nil || result.Status != "complete" {
+				t.Fatalf("review status %q: %v", result.Status, err)
+			}
+		})
+	}
+}
+
 func TestFallbackUsesItsOwnModelBudgetAndResumeDoesNotRepeat(t *testing.T) {
 	var primary, backup atomic.Int32
 	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { primary.Add(1); w.WriteHeader(503) }))
