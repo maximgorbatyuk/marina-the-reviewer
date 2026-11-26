@@ -118,6 +118,14 @@ func Complete(ctx context.Context, provider config.ProviderSnapshot, token strin
 		}
 		body[key] = value
 	}
+	if profile.Model == "auto" {
+		if base, err := url.Parse(profile.BaseURL); err == nil {
+			switch strings.ToLower(base.Hostname()) {
+			case "token-plan.maas.qwencloudapi.com", "token-plan.ap-southeast-1.maas.aliyuncs.com":
+				delete(body, "temperature")
+			}
+		}
+	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return Response{}, &Error{Code: "configuration", Message: "request parameters are invalid"}

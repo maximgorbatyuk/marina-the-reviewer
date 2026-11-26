@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.9
+
+- Omit the temperature parameter for Qwen Token Plan requests that use the auto model.
+
+## 0.3.8
 
 - Remove database path overrides and fix statistics storage at build time.
 - Keep development statistics beside the executable and production statistics in the user's application directory.
