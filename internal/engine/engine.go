@@ -190,7 +190,11 @@ func BuildContext(ctx context.Context, snapshot Snapshot, route config.Route, pr
 }
 
 func options(provider config.ProviderSnapshot, prompt string, task json.RawMessage) review.PlanOptions {
-	return review.PlanOptions{SystemPrompt: prompt, ContextLength: provider.Profile.ContextLength, OutputTokens: provider.Profile.MaximumOutputTokens, Provider: provider.Name, Task: task}
+	outputTokens := provider.Profile.MaximumOutputTokens
+	if outputTokens == 0 {
+		outputTokens = review.DefaultOutputBudget(provider.Profile.ContextLength, provider.Name)
+	}
+	return review.PlanOptions{SystemPrompt: prompt, ContextLength: provider.Profile.ContextLength, OutputTokens: outputTokens, Provider: provider.Name, Task: task}
 }
 
 // BuildDocument uses a background context for callers without cancellation support.
@@ -266,21 +270,32 @@ func (p Plan) ValidateContext(ctx context.Context) error {
 		prompt = p.Prepared.Batches[0].SystemPrompt
 		task = p.Prepared.Batches[0].Input.Task
 	}
-	expected, err := review.PlanContext(ctx, p.Document, options(p.Route.Primary, prompt, task))
-	if err != nil {
+	planOptions := options(p.Route.Primary, prompt, task)
+	outputBudgets := []int{planOptions.OutputTokens}
+	if p.Route.Primary.Profile.MaximumOutputTokens == 0 {
+		// Older plans can have a different reserve for each batch.
+		outputBudgets = append(outputBudgets, 0)
+	}
+	sourcePrepared := false
+	for _, outputTokens := range outputBudgets {
+		planOptions.OutputTokens = outputTokens
+		expected, err := review.PlanContext(ctx, p.Document, planOptions)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
+		if err != nil {
+			continue
+		}
+		sourcePrepared = true
+		equal, err := preparedPlansEqualContext(ctx, expected, p.Prepared, canonicalValuesEqualContext)
+		if err != nil || equal {
+			return err
+		}
+	}
+	if !sourcePrepared {
 		return errors.New("plan source cannot be prepared")
 	}
-	equal, err := preparedPlansEqualContext(ctx, expected, p.Prepared, canonicalValuesEqualContext)
-	if err != nil {
-		return err
-	}
-	if !equal {
-		return errors.New("prepared plan differs from its source document or provider budget; re-plan the input")
-	}
-	return nil
+	return errors.New("prepared plan differs from its source document or provider budget; re-plan the input")
 }
 
 type canonicalValueComparison func(context.Context, any, any) (bool, error)
@@ -738,7 +753,9 @@ func replanWorkContext(ctx context.Context, s *state, index int, provider config
 		return false, err
 	}
 	w := &s.Works[index]
-	children, err := review.SplitBatchContext(ctx, w.Prepared, options(provider, w.Prepared.SystemPrompt, w.Prepared.Input.Task))
+	planOptions := options(provider, w.Prepared.SystemPrompt, w.Prepared.Input.Task)
+	planOptions.OutputTokens = w.Prepared.MaximumOutputTokens
+	children, err := review.SplitBatchContext(ctx, w.Prepared, planOptions)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false, err
 	}

@@ -15,7 +15,16 @@ type BudgetError struct{ Code, Message string }
 
 func (e *BudgetError) Error() string { return e.Code + ": " + e.Message }
 
-// OutputBudget reserves output capacity before source batches are sized.
+// DefaultOutputBudget reserves a fixed share of the context for the model response.
+func DefaultOutputBudget(contextLength int, provider string) int {
+	ceiling := 65536
+	if strings.EqualFold(provider, "mimo") {
+		ceiling = 131072
+	}
+	return min((contextLength+4)/5, ceiling)
+}
+
+// OutputBudget calculates the reserve for saved plans with no fixed output budget.
 func OutputBudget(contextLength, blocks int, provider string) int {
 	ceiling := min(int(math.Ceil(float64(contextLength)*0.2)), 32768)
 	expected := 16384 + blocks*512
