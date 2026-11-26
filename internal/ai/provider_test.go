@@ -79,6 +79,43 @@ func TestJSONModePayloadAndUsage(t *testing.T) {
 		t.Fatalf("result %+v", result)
 	}
 }
+func TestQwenTokenPlanAutoOmitsTemperature(t *testing.T) {
+	for _, tc := range []struct {
+		name, baseURL, model string
+		wantTemperature      bool
+	}{
+		{"QwenCloud auto", "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1", "auto", false},
+		{"Alibaba Cloud auto", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "auto", false},
+		{"QwenCloud explicit model", "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1", "qwen3.8-flash", true},
+		{"Other auto model", "https://token-plan.maas.qwencloudapi.com.example.com/v1", "auto", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := provider(tc.baseURL, false)
+			p.Profile.BaseURL = tc.baseURL
+			p.Profile.Model = tc.model
+			p.Profile.ResponseFormat = "json_schema"
+			input := request()
+			var payload []byte
+			input.OnPrepared = func(_ string, body []byte) error {
+				payload = body
+				return errors.New("stop before the HTTP request")
+			}
+			_, _ = Complete(context.Background(), p, "", input)
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(payload, &body); err != nil {
+				t.Fatalf("read request payload: %v", err)
+			}
+			if string(body["model"]) != strconv.Quote(tc.model) {
+				t.Errorf("model = %s, want %q", body["model"], tc.model)
+			}
+			value, present := body["temperature"]
+			if present != tc.wantTemperature || present && string(value) != "0" {
+				t.Errorf("temperature = %s, present = %t, want present = %t", value, present, tc.wantTemperature)
+			}
+		})
+	}
+}
+
 func TestSSEReassemblesOutputAndRejectsMissingFinish(t *testing.T) {
 	for _, finished := range []bool{true, false} {
 		t.Run(map[bool]string{true: "complete", false: "incomplete"}[finished], func(t *testing.T) {
